@@ -7,21 +7,31 @@ struct FanControlView: View {
     @State private var copiedDiagnostics = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
-            statusBanner
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                statusBanner
 
-            if controller.fans.isEmpty {
-                emptyState
-            } else {
-                fanSection
-                TemperatureView(sensors: controller.sensors)
+                if controller.fans.isEmpty {
+                    emptyState
+                } else {
+                    fanSection
+                    TemperatureView(sensors: controller.sensors)
+                }
+
+                footer
             }
-
-            footer
+            .padding(16)
+            .frame(width: 340)
         }
-        .padding(16)
-        .frame(width: 340)
+        .frame(minWidth: 340, minHeight: 320)
+        .onAppear {
+            controller.start()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            controller.releaseAllFans()
+            controller.stop()
+        }
     }
 
     private var header: some View {
