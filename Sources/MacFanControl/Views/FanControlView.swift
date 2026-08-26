@@ -58,7 +58,10 @@ struct FanControlView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SMC unavailable")
                 .font(.subheadline.weight(.semibold))
-            Text("Fan data could not be loaded. Make sure you are running on a MacBook with macOS 13 or later.")
+            Text(controller.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Try quitting and relaunching the app. Fan writes require your admin password.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
