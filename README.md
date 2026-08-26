@@ -7,12 +7,16 @@
 
 MacFanControl is a lightweight menu bar app that lets you monitor fan speeds and temperatures, set manual fan RPM, or return fans to automatic control. It adapts at runtime to Intel and Apple Silicon MacBooks (M1–M5).
 
+On Apple Silicon you cannot overclock or raise TDP. The useful boost is spinning the fan earlier so firmware can hold clocks. **Performance** does that; it is not an overclock.
+
 ## Features
 
-- Menu bar app with live fan RPM and readable temperature names
-- Manual fan speed sliders for each fan
-- One-click **Auto** (release to system control) and **Max** buttons
-- Administrator password asked **once** to install a LaunchDaemon helper — sliders never trigger that dialog
+- Menu bar app with live fan RPM and a compact **8-minute chart** of CPU temperature, fan RPM, and thermal pressure
+- Thermal-pressure chip from `thermald` (`com.apple.system.thermalpressurelevel`) — Nominal / Moderate / Heavy — which is more useful than `ProcessInfo.thermalState` on Apple Silicon
+- Presets: **Apple Auto**, **Performance**, and **Max**, plus a slider for a fixed RPM
+- **Performance** ramps fans from the hottest CPU/GPU die: min RPM at 65 °C, max RPM at 85 °C. That cools earlier so firmware can hold clocks. It does **not** overclock or raise TDP — Apple Silicon has no user TDP slider.
+- Temperature list shows the hottest CPU, GPU, battery, and Wi-Fi reading (no duplicate battery keys or SMC codes in the main panel)
+- Administrator password asked **once** to install a LaunchDaemon helper — sliders and presets never trigger that dialog
 - Runtime hardware probing — no hardcoded Mac model list
 - Apple Silicon M3+ unlock support via adaptive `Ftst` sequence
 - Diagnostic export for GitHub issue reports
@@ -57,9 +61,13 @@ bash scripts/build-dmg.sh
 
 1. Launch MacFanControl — a fan icon appears in the menu bar.
 2. Click the icon to open the control panel.
-3. Click **Allow fan control…**. macOS asks for your administrator password **once** and installs a small helper at `/usr/local/libexec/MacFanControlHelper`. Moving the slider, Auto, and Max will **not** ask again — including after you quit and reopen the app.
-4. Click **Auto** to return fans to system control.
-5. Click **Copy diagnostic info** to share hardware details when reporting issues.
+3. Click **Allow fan control…**. macOS asks for your administrator password **once** and installs a small helper at `/usr/local/libexec/MacFanControlHelper`. Moving the slider, Auto, Performance, and Max will **not** ask again — including after you quit and reopen the app.
+4. Choose a preset:
+   - **Auto** — Apple’s quiet-first curve (fans released to firmware).
+   - **Performance** — start spinning around 65 °C and hit max by 85 °C. Useful under compile or LLM load on M-series MacBooks. It cannot raise package power; it only removes heat sooner.
+   - **Max** — hold the hardware maximum RPM.
+5. Drag the slider to override to a fixed RPM (never below that fan’s `F0Mn` minimum).
+6. Click **Copy diagnostic info** to share hardware details when reporting issues.
 
 **Safety:** When you quit the app or click **Auto**, all fans are released back to automatic control. The helper stays installed so the next launch does not ask for a password.
 
