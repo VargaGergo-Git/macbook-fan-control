@@ -52,7 +52,7 @@ struct BatteryView: View {
     }
 
     private var progress: Double {
-        min(max((snapshot.percent ?? 0) / 100, 0), 1)
+        Swift.min(Swift.max((snapshot.percent ?? 0) / 100, 0), 1)
     }
 
     private var stateColor: Color {

@@ -32,7 +32,7 @@ enum BatteryReader {
         let designCapacity = double(properties["DesignCapacity"])
         let percent: Double?
         if let currentCapacity, let maxCapacity {
-            percent = BatteryMath.percent(current: currentCapacity, max: maxCapacity)
+            percent = BatteryMath.percent(current: currentCapacity, maximum: maxCapacity)
         } else {
             percent = nil
         }
@@ -87,7 +87,7 @@ enum BatteryReader {
             amperageMilliamps: milliamps,
             minutesRemaining: minutes,
             cycleCount: int(properties["CycleCount"]),
-            healthPercent: BatteryMath.healthPercent(max: maxCapacity ?? 0, design: designCapacity ?? 0)
+            healthPercent: BatteryMath.healthPercent(maximum: maxCapacity ?? 0, design: designCapacity ?? 0)
         )
     }
 

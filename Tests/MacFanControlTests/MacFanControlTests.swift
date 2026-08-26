@@ -99,11 +99,11 @@ final class HistoryBufferTests: XCTestCase {
 
 final class BatteryMathTests: XCTestCase {
     func testPercentFromMilliampHours() {
-        XCTAssertEqual(BatteryMath.percent(current: 5040, max: 7200) ?? 0, 70, accuracy: 0.1)
+        XCTAssertEqual(BatteryMath.percent(current: 5040, maximum: 7200) ?? 0, 70, accuracy: 0.1)
     }
 
     func testPercentWhenMaxIsAlready100() {
-        XCTAssertEqual(BatteryMath.percent(current: 83, max: 100) ?? 0, 83, accuracy: 0.1)
+        XCTAssertEqual(BatteryMath.percent(current: 83, maximum: 100) ?? 0, 83, accuracy: 0.1)
     }
 
     func testChargeState() {

@@ -138,15 +138,15 @@ public struct BatterySnapshot: Sendable, Equatable {
 }
 
 enum BatteryMath {
-    static func percent(current: Double, max: Double) -> Double? {
-        guard max > 0, current >= 0 else { return nil }
-        let value = max <= 100 ? current : (current / max) * 100
-        return min(max(value, 0), 100)
+    static func percent(current: Double, maximum: Double) -> Double? {
+        guard maximum > 0, current >= 0 else { return nil }
+        let value = maximum <= 100 ? current : (current / maximum) * 100
+        return Swift.min(Swift.max(value, 0), 100)
     }
 
-    static func healthPercent(max: Double, design: Double) -> Double? {
-        guard design > 0, max > 0 else { return nil }
-        return min(max((max / design) * 100, 0), 110)
+    static func healthPercent(maximum: Double, design: Double) -> Double? {
+        guard design > 0, maximum > 0 else { return nil }
+        return Swift.min(Swift.max((maximum / design) * 100, 0), 110)
     }
 
     static func wattsFromTelemetry(_ raw: Double) -> Double {
