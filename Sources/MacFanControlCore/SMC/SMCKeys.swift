@@ -24,12 +24,12 @@ public enum SMCKeyCodec {
     public static func decodeFloat(from bytes: Data) -> Double {
         guard bytes.count >= 4 else { return 0 }
         let bits = bytes.withUnsafeBytes { $0.load(as: UInt32.self) }
-        return Double(bitPattern: bits)
+        return Double(Float(bitPattern: bits))
     }
 
     public static func encodeFloat(_ value: Double) -> Data {
-        var bits = value.bitPattern
-        return withUnsafeBytes(of: &bits) { Data($0) }
+        var floatValue = Float(value)
+        return withUnsafeBytes(of: &floatValue) { Data($0) }
     }
 
     public static func decodeFPE2(from bytes: Data) -> Double {
