@@ -208,18 +208,20 @@ final class SMCService {
 
     func enumerateTemperatureKeys(limit: Int = 64) -> [TemperatureSensor] {
         var sensors: [TemperatureSensor] = []
+        var seenKeys = Set<String>()
 
-        for index in 0..<256 where sensors.count < limit {
-            let key = String(format: "T%03X", index)
-            guard let keyData = try? readKey(key) else { continue }
+        func appendSensor(key: String) {
+            guard !seenKeys.contains(key), sensors.count < limit else { return }
+            guard let keyData = try? readKey(key) else { return }
             guard let celsius = SMCKeyCodec.decodeTemperature(
                 key: key,
                 bytes: keyData.data,
                 size: keyData.dataSize
             ), celsius > -50, celsius < 150 else {
-                continue
+                return
             }
 
+            seenKeys.insert(key)
             sensors.append(
                 TemperatureSensor(
                     id: key,
@@ -228,6 +230,14 @@ final class SMCService {
                     celsius: celsius
                 )
             )
+        }
+
+        for key in SMCKeyCodec.knownTemperatureKeys {
+            appendSensor(key: key)
+        }
+
+        for index in 0..<256 where sensors.count < limit {
+            appendSensor(key: String(format: "T%03X", index))
         }
 
         return sensors.sorted { $0.celsius > $1.celsius }

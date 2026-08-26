@@ -36,16 +36,11 @@ public final class FanController: ObservableObject {
         guard let profile else { return }
 
         do {
-            try PrivilegedRunner.withAuthorization {
-                if profile.hasFtstKey {
-                    try? smc.writeUInt8(SMCConstants.ftstKey, value: 0)
-                }
-
-                for index in 0..<profile.fanCount {
-                    let modeKey = profile.fanModeKeys[index]
-                    try smc.writeUInt8(modeKey, value: UInt8(FanMode.automatic.rawValue))
-                }
-            }
+            try PrivilegedSMC.setAutomatic(
+                modeKeys: profile.fanModeKeys,
+                clearFtst: profile.hasFtstKey,
+                using: smc
+            )
         } catch {
             notes.append("Release on exit failed: \(error.localizedDescription)")
         }
@@ -119,7 +114,15 @@ public final class FanController: ObservableObject {
             fans = try HardwareProbe.readFans(using: smc, profile: detectedProfile)
             sensors = smc.enumerateTemperatureKeys()
             isReadOnly = false
-            statusMessage = "Connected. \(detectedProfile.fanCount) fan(s) detected."
+
+            if PrivilegedSMC.canWriteDirectly {
+                statusMessage = "Connected. \(detectedProfile.fanCount) fan(s) detected."
+            } else if PrivilegedSMC.helperAvailable {
+                statusMessage = "Connected. \(detectedProfile.fanCount) fan(s). Move a slider to authorize fan control."
+            } else {
+                statusMessage = "Connected (read-only). Rebuild to include MacFanControlHelper."
+                notes.append("MacFanControlHelper not found next to the app binary.")
+            }
         } catch {
             isReadOnly = true
             statusMessage = error.localizedDescription
@@ -163,15 +166,11 @@ public final class FanController: ObservableObject {
     private func setAutomaticForAllFans() async throws {
         guard let profile else { return }
 
-        try PrivilegedRunner.withAuthorization {
-            if profile.hasFtstKey {
-                try? smc.writeUInt8(SMCConstants.ftstKey, value: 0)
-            }
-
-            for index in 0..<profile.fanCount {
-                try smc.writeUInt8(profile.fanModeKeys[index], value: UInt8(FanMode.automatic.rawValue))
-            }
-        }
+        try PrivilegedSMC.setAutomatic(
+            modeKeys: profile.fanModeKeys,
+            clearFtst: profile.hasFtstKey,
+            using: smc
+        )
     }
 
     private func setManualSpeed(forAll rpms: [Double]) async throws {
@@ -183,43 +182,24 @@ public final class FanController: ObservableObject {
     }
 
     private func setManualSpeed(for fanIndex: Int, rpm: Double, profile: HardwareProfile) async throws {
-        try PrivilegedRunner.withAuthorization {
-            try unlockManualControlSync(for: fanIndex, profile: profile)
+        let modeKey = profile.fanModeKeys[fanIndex]
+        let targetKey = SMCKeyCodec.fanKey(prefix: "F", index: fanIndex) + "Tg"
 
-            let targetKey = SMCKeyCodec.fanKey(prefix: "F", index: fanIndex) + "Tg"
-            try smc.writeFloatRPM(targetKey, value: rpm)
-        }
+        try PrivilegedSMC.setManualRPM(
+            modeKey: modeKey,
+            targetKey: targetKey,
+            rpm: rpm,
+            useFtst: profile.hasFtstKey,
+            using: smc
+        )
     }
 
     private func unlockManualControl(for fanIndex: Int, profile: HardwareProfile) async throws {
-        try PrivilegedRunner.withAuthorization {
-            try unlockManualControlSync(for: fanIndex, profile: profile)
-        }
-    }
-
-    private func unlockManualControlSync(for fanIndex: Int, profile: HardwareProfile) throws {
         let modeKey = profile.fanModeKeys[fanIndex]
-        let manualValue = UInt8(FanMode.manual.rawValue)
-
-        try smc.writeUInt8(modeKey, value: manualValue)
-        if try smc.readUInt8(modeKey) == manualValue {
-            return
-        }
-
-        guard profile.hasFtstKey else {
-            throw SMCError.writeFailed(modeKey, smcResult: 0x82)
-        }
-
-        try smc.writeUInt8(SMCConstants.ftstKey, value: 1)
-
-        for _ in 0..<100 {
-            try smc.writeUInt8(modeKey, value: manualValue)
-            if try smc.readUInt8(modeKey) == manualValue {
-                return
-            }
-            Thread.sleep(forTimeInterval: 0.1)
-        }
-
-        throw SMCError.writeFailed(modeKey, smcResult: 0x82)
+        try PrivilegedSMC.unlockManualControl(
+            modeKey: modeKey,
+            useFtst: profile.hasFtstKey,
+            using: smc
+        )
     }
 }

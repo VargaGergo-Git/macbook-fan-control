@@ -89,8 +89,60 @@ public enum SMCKeyCodec {
     }
 
     static func friendlySensorName(for key: String) -> String {
-        key
+        if let name = knownTemperatureNames[key] {
+            return name
+        }
+        return key
     }
+
+    /// Common SMC temperature keys across Intel and Apple Silicon MacBooks.
+    static let knownTemperatureKeys: [String] = [
+        // CPU
+        "TC0P", "TC0D", "TC0E", "TC0F", "TC0H", "TC0c", "TC1c", "TC2c", "TC3c", "TC4c",
+        "TCFC", "TCGC", "TCSc", "TCXC", "TCXc",
+        "Tc0a", "Tc0b", "Tc0c", "Tc0d", "Tc0e", "Tc0f", "Tc0p",
+        // GPU
+        "TG0P", "TG0D", "TG0H", "TG0c", "TG1c", "TG2c",
+        "Tg05", "Tg0D", "Tg0L", "Tg0P", "Tg0T", "Tg0d", "Tg0p",
+        // Heatsink / logic board
+        "TH0P", "TH0B", "TH0F", "THPS",
+        "Th0H", "Th0L", "Th0P", "Th0R", "Th0a", "Th0b", "Th0c", "Th0x",
+        // Memory
+        "TM0P", "TM0S", "TM0b", "TMXP", "TMPS", "TMBS",
+        "Tm0P", "Tm0p",
+        // Northbridge / platform
+        "TN0D", "TN0P", "TN0S",
+        "Tp0P", "Tp0C", "Tp1C", "Tp09", "Tp0T", "Tp0t",
+        // Battery
+        "TB0T", "TB1T", "TB2T", "TBXT",
+        // Ambient / wireless / SSD
+        "Ta0P", "Ta0p", "TaLP",
+        "TW0P", "TW0T",
+        "Ts0P", "Ts0S",
+        "AC0T", "AC1T",
+        "dTaP", "dTa2",
+        // Power / VRM
+        "Th1H", "Th2H", "Th3H"
+    ]
+
+    private static let knownTemperatureNames: [String: String] = [
+        "TC0P": "CPU Proximity",
+        "TC0D": "CPU Die",
+        "TC0E": "CPU",
+        "TC0F": "CPU",
+        "TG0P": "GPU Proximity",
+        "TG0D": "GPU Die",
+        "TH0P": "Heatsink",
+        "TM0P": "Memory Proximity",
+        "TN0D": "Northbridge Die",
+        "TB0T": "Battery",
+        "Ta0P": "Ambient",
+        "TW0P": "Airport",
+        "Tp0P": "Platform Controller",
+        "Tc0p": "CPU Package",
+        "Tg0P": "GPU Package",
+        "Th0P": "Heat Pipe"
+    ]
 }
 
 enum SMCConstants {

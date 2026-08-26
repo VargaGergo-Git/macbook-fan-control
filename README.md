@@ -39,6 +39,8 @@ swift build -c release
 .build/release/MacFanControl
 ```
 
+This builds both `MacFanControl` and `MacFanControlHelper` in `.build/release/`. The helper must sit next to the main binary for fan speed changes to work.
+
 To package a `.dmg` locally:
 
 ```bash
@@ -49,9 +51,11 @@ To package a `.dmg` locally:
 
 1. Launch MacFanControl — a fan icon appears in the menu bar.
 2. Click the icon to open the control panel.
-3. Move a fan slider to set manual RPM (macOS prompts for admin password).
+3. Move a fan slider to set manual RPM — macOS prompts for your administrator password once per change.
 4. Click **Auto** to return fans to system control.
 5. Click **Copy diagnostic info** to share hardware details when reporting issues.
+
+**Tip:** To avoid repeated password prompts, run with `sudo .build/release/MacFanControl` after building.
 
 **Safety:** When you quit the app or click **Auto**, all fans are released back to automatic control.
 
