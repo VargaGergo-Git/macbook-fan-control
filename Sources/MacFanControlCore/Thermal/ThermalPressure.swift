@@ -1,7 +1,4 @@
 import Foundation
-#if os(macOS)
-import Darwin
-#endif
 
 /// Firmware thermal pressure from `thermald` via notifyd.
 /// This is more useful than `ProcessInfo.thermalState`, which collapses
@@ -30,6 +27,18 @@ public enum ThermalPressure: Int, Sendable, Equatable {
     }
 }
 
+#if os(macOS)
+/// Xcode 27 Darwin overlay does not export notify(3). Bind the C symbols directly.
+@_silgen_name("notify_register_check")
+private func darwinNotifyRegisterCheck(_ name: UnsafePointer<CChar>, _ token: UnsafeMutablePointer<Int32>) -> UInt32
+
+@_silgen_name("notify_get_state")
+private func darwinNotifyGetState(_ token: Int32, _ state: UnsafeMutablePointer<UInt64>) -> UInt32
+
+@_silgen_name("notify_cancel")
+private func darwinNotifyCancel(_ token: Int32) -> UInt32
+#endif
+
 final class ThermalPressureMonitor {
     #if os(macOS)
     private var token: Int32 = 0
@@ -40,7 +49,7 @@ final class ThermalPressureMonitor {
         #if os(macOS)
         guard !registered else { return }
         let name = "com.apple.system.thermalpressurelevel"
-        let status = name.withCString { notify_register_check($0, &token) }
+        let status = name.withCString { darwinNotifyRegisterCheck($0, &token) }
         registered = status == 0
         #endif
     }
@@ -50,7 +59,7 @@ final class ThermalPressureMonitor {
         if !registered { start() }
         guard registered else { return .unknown }
         var state: UInt64 = 0
-        guard notify_get_state(token, &state) == 0 else { return .unknown }
+        guard darwinNotifyGetState(token, &state) == 0 else { return .unknown }
         return ThermalPressure.from(state: state)
         #else
         return .unknown
@@ -60,7 +69,7 @@ final class ThermalPressureMonitor {
     func stop() {
         #if os(macOS)
         if registered {
-            notify_cancel(token)
+            _ = darwinNotifyCancel(token)
             registered = false
         }
         #endif
