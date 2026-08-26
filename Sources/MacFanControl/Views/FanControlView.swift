@@ -16,10 +16,14 @@ struct FanControlView: View {
                 if controller.fans.isEmpty && controller.sensors.isEmpty {
                     emptyState
                 } else {
+                    ThermalChartView(
+                        samples: controller.history,
+                        maxRPM: controller.fans.map(\.maxRPM).max() ?? 6500
+                    )
                     if !controller.fans.isEmpty {
                         fanSection
                     }
-                    TemperatureView(sensors: controller.sensors)
+                    TemperatureView(sensors: controller.summarySensors, cpuPeak: controller.cpuPeakCelsius)
                 }
 
                 footer
@@ -41,7 +45,7 @@ struct FanControlView: View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: "fanblades.fill")
                 .font(.title3)
-                .foregroundStyle(controller.isManualMode ? Color.orange : Color.accentColor)
+                .foregroundStyle(controller.controlMode == .appleAuto ? Color.accentColor : Color.orange)
                 .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -55,15 +59,36 @@ struct FanControlView: View {
 
             Spacer()
 
-            Text(controller.isManualMode ? "Manual" : "Automatic")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule().fill((controller.isManualMode ? Color.orange : Color.green).opacity(0.18))
+            VStack(alignment: .trailing, spacing: 4) {
+                modeChip(
+                    controller.controlMode.badgeLabel,
+                    color: controller.controlMode == .appleAuto ? .green : .orange
                 )
-                .foregroundStyle(controller.isManualMode ? Color.orange : Color.green)
+                modeChip(
+                    controller.thermalPressure.label,
+                    color: pressureColor
+                )
+            }
         }
+    }
+
+    private var pressureColor: Color {
+        switch controller.thermalPressure {
+        case .nominal: return .green
+        case .moderate: return .yellow
+        case .heavy: return .orange
+        case .trapping, .sleeping: return .red
+        case .unknown: return .secondary
+        }
+    }
+
+    private func modeChip(_ title: String, color: Color) -> some View {
+        Text(title)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(color.opacity(0.18)))
+            .foregroundStyle(color)
     }
 
     private var statusBanner: some View {
@@ -79,23 +104,25 @@ struct FanControlView: View {
         if controller.isReadOnly || controller.hardwareProfile == nil {
             EmptyView()
         } else if controller.isAuthorized {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "checkmark.shield.fill")
                     .foregroundStyle(.green)
-                Text("Fan helper is installed — sliders will not ask for a password")
-                    .font(.caption.weight(.medium))
+                    .font(.caption)
+                Text("Helper installed — no password on slider or presets")
+                    .font(.caption2.weight(.medium))
                 Spacer()
             }
-            .padding(10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.green.opacity(0.10))
             )
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Allow fan control once")
                     .font(.subheadline.weight(.semibold))
-                Text("macOS will ask for your administrator password to install a small helper. After that, moving the slider, Auto, and Max will not ask again — including the next time you open the app.")
+                Text("macOS will ask for your administrator password to install a small helper. After that, the slider, Auto, Performance, and Max will not ask again.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Allow fan control…") {
@@ -140,7 +167,7 @@ struct FanControlView: View {
                 FanCard(
                     fan: fan,
                     fanCount: controller.fans.count,
-                    isManual: controller.isManualMode,
+                    isManual: controller.controlMode != .appleAuto,
                     isEnabled: controller.isAuthorized
                 ) { rpm in
                     controller.setFanSpeed(fanID: fan.id, rpm: rpm)
@@ -151,18 +178,26 @@ struct FanControlView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Button("Auto") {
                     controller.setAutoMode()
                 }
                 .buttonStyle(.bordered)
+                .tint(controller.controlMode == .appleAuto ? .green : .primary)
+                .disabled(controller.fans.isEmpty || !controller.isAuthorized)
+
+                Button("Performance") {
+                    controller.setPerformanceMode()
+                }
+                .buttonStyle(.bordered)
+                .tint(controller.controlMode == .performanceCurve ? .orange : .primary)
                 .disabled(controller.fans.isEmpty || !controller.isAuthorized)
 
                 Button("Max") {
                     controller.setMaxSpeed()
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(controller.isManualMode ? .orange : .accentColor)
+                .buttonStyle(.bordered)
+                .tint(controller.controlMode == .fixedRPM ? .orange : .primary)
                 .disabled(controller.fans.isEmpty || !controller.isAuthorized)
 
                 Spacer()
@@ -175,6 +210,7 @@ struct FanControlView: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
             }
+            .controlSize(.small)
 
             Button(copiedDiagnostics ? "Copied diagnostics" : "Copy diagnostic info") {
                 NSPasteboard.general.clearContents()
