@@ -48,6 +48,7 @@ private typealias SMCBytes = (
 private enum SMCCommand: UInt8 {
     case readKey = 5
     case writeKey = 6
+    case readKeyIndex = 8
     case getKeyInfo = 9
 }
 
@@ -206,17 +207,56 @@ final class SMCService {
         try writeKey(key, data: SMCKeyCodec.encodeFloat(value), dataSize: 4)
     }
 
+    func keyCount() throws -> Int {
+        let data = try readKey("#KEY").data
+        guard data.count >= 4 else { return 0 }
+        return Int(data.withUnsafeBytes { $0.load(as: UInt32.self) })
+    }
+
+    func keyAtIndex(_ index: Int) throws -> String {
+        #if !os(macOS)
+        throw SMCError.unsupportedPlatform
+        #else
+        var input = SMCParamStruct()
+        input.data8 = SMCCommand.readKeyIndex.rawValue
+        input.data32 = UInt32(index)
+        let output = try call(input, isWrite: false, keyLabel: "#IDX\(index)")
+
+        if output.key != 0 {
+            return SMCKeyCodec.decodeKey(output.key)
+        }
+
+        return bytesToKeyName(output.bytes)
+        #endif
+    }
+
+    func allKeyNames() -> [String] {
+        guard let count = try? keyCount(), count > 0 else { return [] }
+
+        var keys: [String] = []
+        keys.reserveCapacity(count)
+
+        for index in 0..<count {
+            guard let key = try? keyAtIndex(index), key.count == 4 else { continue }
+            keys.append(key)
+        }
+
+        return keys
+    }
+
     func enumerateTemperatureKeys(limit: Int = 64) -> [TemperatureSensor] {
         var sensors: [TemperatureSensor] = []
         var seenKeys = Set<String>()
 
         func appendSensor(key: String) {
             guard !seenKeys.contains(key), sensors.count < limit else { return }
+            guard key.first == "T" || key.first == "t" else { return }
             guard let keyData = try? readKey(key) else { return }
             guard let celsius = SMCKeyCodec.decodeTemperature(
                 key: key,
                 bytes: keyData.data,
-                size: keyData.dataSize
+                size: keyData.dataSize,
+                dataType: keyData.dataType
             ), celsius > -50, celsius < 150 else {
                 return
             }
@@ -230,6 +270,10 @@ final class SMCService {
                     celsius: celsius
                 )
             )
+        }
+
+        for key in allKeyNames() {
+            appendSensor(key: key)
         }
 
         for key in SMCKeyCodec.knownTemperatureKeys {
@@ -285,6 +329,13 @@ final class SMCService {
         withUnsafeBytes(of: bytes) { raw in
             Data(raw.prefix(max(0, min(count, 32))))
         }
+    }
+
+    private func bytesToKeyName(_ bytes: SMCBytes) -> String {
+        let data = bytesToData(bytes, count: 4)
+        return String(data: data, encoding: .ascii)?
+            .trimmingCharacters(in: .controlCharacters)
+            .padding(toLength: 4, withPad: " ", startingAt: 0) ?? "????"
     }
 
     private func dataToBytes(_ data: Data, count: Int) -> SMCBytes {

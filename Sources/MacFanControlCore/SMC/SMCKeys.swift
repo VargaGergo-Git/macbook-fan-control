@@ -10,6 +10,20 @@ public enum SMCKeyCodec {
         return result
     }
 
+    static func decodeKey(_ value: UInt32) -> String {
+        let bytes: [UInt8] = [
+            UInt8((value >> 24) & 0xFF),
+            UInt8((value >> 16) & 0xFF),
+            UInt8((value >> 8) & 0xFF),
+            UInt8(value & 0xFF)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? "????"
+    }
+
+    static func fourCC(_ value: String) -> UInt32 {
+        encodeKey(value.padding(toLength: 4, withPad: " ", startingAt: 0))
+    }
+
     static func fanKey(prefix: String, index: Int) -> String {
         String(format: "\(prefix)%d", index)
     }
@@ -64,10 +78,25 @@ public enum SMCKeyCodec {
         return sign * (integer + fraction)
     }
 
-    static func decodeTemperature(key: String, bytes: Data, size: UInt32) -> Double? {
+    static func decodeTemperature(key: String, bytes: Data, size: UInt32, dataType: UInt32) -> Double? {
+        switch dataType {
+        case fourCC("sp78"), fourCC("sp87"), fourCC("sp96"):
+            return decodeSP78(from: bytes)
+        case fourCC("fpe2"):
+            return decodeFPE2(from: bytes)
+        case fourCC("flt "):
+            return decodeFloat(from: bytes)
+        case fourCC("ui16"):
+            guard bytes.count >= 2 else { return nil }
+            let raw = bytes.withUnsafeBytes { $0.load(as: UInt16.self) }
+            return Double(raw) / 256.0
+        default:
+            break
+        }
+
         switch size {
         case 2:
-            if key.hasPrefix("T") {
+            if key.first == "T" || key.first == "t" {
                 return decodeSP78(from: bytes)
             }
             return decodeFPE2(from: bytes)

@@ -116,6 +116,7 @@ private struct FanCard: View {
     let onSpeedChange: (Double) -> Void
 
     @State private var sliderValue: Double
+    @State private var isEditing = false
 
     init(fan: Fan, onSpeedChange: @escaping (Double) -> Void) {
         self.fan = fan
@@ -138,6 +139,7 @@ private struct FanCard: View {
                 value: $sliderValue,
                 in: fan.minRPM...fan.maxRPM,
                 onEditingChanged: { editing in
+                    isEditing = editing
                     if !editing {
                         onSpeedChange(sliderValue)
                     }
@@ -155,10 +157,8 @@ private struct FanCard: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.08)))
         .onChange(of: fan.targetRPM) { newValue in
+            guard !isEditing else { return }
             sliderValue = newValue
-        }
-        .onTapGesture {
-            onSpeedChange(sliderValue)
         }
     }
 }
