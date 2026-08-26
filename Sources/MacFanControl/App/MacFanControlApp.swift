@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = false
-        popover.contentSize = NSSize(width: 360, height: 620)
+        popover.contentSize = NSSize(width: 360, height: 720)
         popover.contentViewController = NSHostingController(
             rootView: FanControlView(controller: controller)
         )

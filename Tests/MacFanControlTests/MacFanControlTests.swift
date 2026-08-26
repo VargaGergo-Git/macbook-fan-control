@@ -96,3 +96,38 @@ final class HistoryBufferTests: XCTestCase {
         XCTAssertEqual(samples.last?.time, Date(timeIntervalSince1970: 499))
     }
 }
+
+final class BatteryMathTests: XCTestCase {
+    func testPercentFromMilliampHours() {
+        XCTAssertEqual(BatteryMath.percent(current: 5040, max: 7200) ?? 0, 70, accuracy: 0.1)
+    }
+
+    func testPercentWhenMaxIsAlready100() {
+        XCTAssertEqual(BatteryMath.percent(current: 83, max: 100) ?? 0, 83, accuracy: 0.1)
+    }
+
+    func testChargeState() {
+        XCTAssertEqual(BatteryMath.state(isCharging: true, isPluggedIn: true, percent: 40), .charging)
+        XCTAssertEqual(BatteryMath.state(isCharging: false, isPluggedIn: false, percent: 40), .discharging)
+        XCTAssertEqual(BatteryMath.state(isCharging: false, isPluggedIn: true, percent: 100), .full)
+        XCTAssertEqual(BatteryMath.state(isCharging: false, isPluggedIn: true, percent: 80), .pluggedNotCharging)
+    }
+
+    func testTelemetryMilliwattsBecomeWatts() {
+        XCTAssertEqual(BatteryMath.wattsFromTelemetry(6879), 6.879, accuracy: 0.001)
+        XCTAssertEqual(BatteryMath.wattsFromTelemetry(96), 96, accuracy: 0.001)
+    }
+
+    func testBatteryWattsSignFromChargeState() {
+        let charging = BatteryMath.batteryWatts(isCharging: true, milliamps: 2500, volts: 12, telemetryWatts: nil)
+        let discharging = BatteryMath.batteryWatts(isCharging: false, milliamps: -2500, volts: 12, telemetryWatts: nil)
+        XCTAssertEqual(charging ?? 0, 30, accuracy: 0.1)
+        XCTAssertEqual(discharging ?? 0, -30, accuracy: 0.1)
+    }
+
+    func testSignedWattsLabel() {
+        XCTAssertEqual(BatterySnapshot.formatSignedWatts(38), "+38 W")
+        XCTAssertEqual(BatterySnapshot.formatSignedWatts(-12), "−12 W")
+        XCTAssertEqual(BatterySnapshot.formatSignedWatts(0), "0 W")
+    }
+}

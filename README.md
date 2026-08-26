@@ -16,6 +16,7 @@ On Apple Silicon you cannot overclock or raise TDP. The useful boost is spinning
 - Presets: **Apple Auto**, **Performance**, and **Max**, plus a slider for a fixed RPM
 - **Performance** ramps fans from the hottest CPU/GPU die: min RPM at 65 °C, max RPM at 85 °C. That cools earlier so firmware can hold clocks. It does **not** overclock or raise TDP — Apple Silicon has no user TDP slider.
 - Temperature list shows the hottest CPU, GPU, battery, and Wi-Fi reading (no duplicate battery keys or SMC codes in the main panel)
+- Live **battery** card: charge percent, charging vs on-battery, pack watts, adapter watts vs rated limit, system load, voltage/current, and time to full/empty (IOKit `AppleSmartBattery`, no extra password)
 - Administrator password asked **once** to install a LaunchDaemon helper — sliders and presets never trigger that dialog
 - Runtime hardware probing — no hardcoded Mac model list
 - Apple Silicon M3+ unlock support via adaptive `Ftst` sequence
@@ -67,7 +68,8 @@ bash scripts/build-dmg.sh
    - **Performance** — start spinning around 65 °C and hit max by 85 °C. Useful under compile or LLM load on M-series MacBooks. It cannot raise package power; it only removes heat sooner.
    - **Max** — hold the hardware maximum RPM.
 5. Drag the slider to override to a fixed RPM (never below that fan’s `F0Mn` minimum).
-6. Click **Copy diagnostic info** to share hardware details when reporting issues.
+6. The **Battery** section shows charge rate, adapter watts, and time remaining. It is read-only and does not need the helper.
+7. Click **Copy diagnostic info** to share hardware details when reporting issues.
 
 **Safety:** When you quit the app or click **Auto**, all fans are released back to automatic control. The helper stays installed so the next launch does not ask for a password.
 

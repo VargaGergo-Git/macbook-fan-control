@@ -13,13 +13,16 @@ struct FanControlView: View {
                 statusBanner
                 authorizationBanner
 
-                if controller.fans.isEmpty && controller.sensors.isEmpty {
+                if controller.fans.isEmpty && controller.sensors.isEmpty && !controller.battery.isAvailable {
                     emptyState
                 } else {
                     ThermalChartView(
                         samples: controller.history,
                         maxRPM: controller.fans.map(\.maxRPM).max() ?? 6500
                     )
+                    if controller.battery.isAvailable {
+                        BatteryView(snapshot: controller.battery)
+                    }
                     if !controller.fans.isEmpty {
                         fanSection
                     }

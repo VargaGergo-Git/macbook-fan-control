@@ -14,6 +14,7 @@ public final class FanController: ObservableObject {
     @Published public private(set) var thermalPressure: ThermalPressure = .unknown
     @Published public private(set) var history: [HistorySample] = []
     @Published public private(set) var cpuPeakCelsius: Double?
+    @Published public private(set) var battery = BatterySnapshot()
 
     public init() {}
 
@@ -204,6 +205,7 @@ public final class FanController: ObservableObject {
             extra.append(String(format: "CPU session peak: %.1f °C", cpuPeakCelsius))
         }
         extra.append("History samples: \(history.count)")
+        extra.append(battery.diagnosticLine)
 
         let report = DiagnosticExporter.makeReport(
             profile: profile ?? HardwareProfile(
@@ -231,6 +233,7 @@ public final class FanController: ObservableObject {
             sensors = smc.enumerateTemperatureKeys(limit: 12)
             updateCPUPeak()
             thermalPressure = pressureMonitor.current()
+            battery = BatteryReader.snapshot()
             recordHistory()
             isReadOnly = false
             isAuthorized = PrivilegedSMC.canWriteDirectly || PrivilegedSMC.sessionAlive
@@ -251,11 +254,13 @@ public final class FanController: ObservableObject {
             isReadOnly = true
             statusMessage = error.localizedDescription
             notes.append(error.localizedDescription)
+            battery = BatteryReader.snapshot()
         }
     }
 
     private func pollLoop() async {
         while !Task.isCancelled {
+            battery = BatteryReader.snapshot()
             await refreshReadings()
             if controlMode == .performanceCurve, !isWriting {
                 await applyPerformanceCurve()
