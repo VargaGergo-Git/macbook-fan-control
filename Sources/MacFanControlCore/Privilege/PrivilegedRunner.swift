@@ -32,12 +32,13 @@ enum PrivilegedRunner {
             throw PrivilegedError.authorizationFailed
         }
 
-        var item = AuthorizationItem()
         let copyStatus = kAuthorizationRightExecute.withCString { namePointer in
-            item.name = namePointer
-            item.valueLength = 0
-            item.value = nil
-            item.flags = 0
+            var item = AuthorizationItem(
+                name: namePointer,
+                valueLength: 0,
+                value: nil,
+                flags: 0
+            )
 
             var rights = withUnsafeMutablePointer(to: &item) { pointer in
                 AuthorizationRights(count: 1, items: pointer)
