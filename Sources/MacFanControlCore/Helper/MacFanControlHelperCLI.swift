@@ -3,15 +3,14 @@ import Foundation
 public enum MacFanControlHelperCLI {
     public enum ExitCode: Int32 {
         case success = 0
-        case invalidArguments = 1
-        case executionFailed = 1
+        case failure = 1
     }
 
     @discardableResult
     public static func run(arguments: [String]) -> ExitCode {
         guard !arguments.isEmpty else {
             printUsage()
-            return .invalidArguments
+            return .failure
         }
 
         do {
@@ -72,7 +71,7 @@ public enum MacFanControlHelperCLI {
             return .success
         } catch {
             fputs("\(error.localizedDescription)\n", stderr)
-            return .executionFailed
+            return .failure
         }
     }
 
