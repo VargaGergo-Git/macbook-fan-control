@@ -108,13 +108,39 @@ public enum SMCKeyCodec {
     }
 
     public static func componentName(for key: String) -> String {
-        let suffix = String(key.dropFirst())
-        if suffix.contains("C") || suffix.hasPrefix("C") { return "CPU" }
-        if suffix.contains("G") || suffix.hasPrefix("G") { return "GPU" }
-        if suffix.contains("B") { return "Battery" }
-        if suffix.contains("P") { return "Platform" }
-        if suffix.contains("A") { return "Ambient" }
+        if let mapped = knownComponentNames[key] {
+            return mapped
+        }
+
+        let lower = key.lowercased()
+        if lower == "th0b" { return "Battery" }
+        if lower.hasPrefix("tc") || lower.hasPrefix("tp0c") || lower.hasPrefix("tp1c") { return "CPU" }
+        if lower.hasPrefix("tg") { return "GPU" }
+        if lower.hasPrefix("tb") { return "Battery" }
+        if lower.hasPrefix("tw") { return "Wi-Fi" }
+        if lower.hasPrefix("ta") || lower.hasPrefix("dta") { return "Ambient" }
+        if lower.hasPrefix("tm") { return "Memory" }
+        if lower.hasPrefix("tn") || lower.hasPrefix("tp") { return "System" }
+        if lower.hasPrefix("th") { return "Heatsink" }
+        if lower.hasPrefix("ts") { return "Storage" }
+        if lower.hasPrefix("ac") { return "Power" }
         return "Other"
+    }
+
+    public static func componentSortOrder(_ component: String) -> Int {
+        switch component {
+        case "CPU": return 0
+        case "GPU": return 1
+        case "System": return 2
+        case "Heatsink": return 3
+        case "Memory": return 4
+        case "Battery": return 5
+        case "Wi-Fi": return 6
+        case "Storage": return 7
+        case "Ambient": return 8
+        case "Power": return 9
+        default: return 10
+        }
     }
 
     static func friendlySensorName(for key: String) -> String {
@@ -154,23 +180,79 @@ public enum SMCKeyCodec {
         "Th1H", "Th2H", "Th3H"
     ]
 
+    private static let knownComponentNames: [String: String] = [
+        "TH0B": "Battery",
+        "TW0P": "Wi-Fi",
+        "TW0T": "Wi-Fi"
+    ]
+
     private static let knownTemperatureNames: [String: String] = [
         "TC0P": "CPU Proximity",
         "TC0D": "CPU Die",
         "TC0E": "CPU",
         "TC0F": "CPU",
+        "TC0H": "CPU Heatsink",
+        "TC0c": "CPU Core 1",
+        "TC1c": "CPU Core 2",
+        "TC2c": "CPU Core 3",
+        "TC3c": "CPU Core 4",
+        "TC4c": "CPU Core 5",
+        "TCFC": "CPU PECI",
+        "TCGC": "CPU Graphics",
+        "TCXC": "CPU Exhaust",
+        "TCXc": "CPU Exhaust",
+        "Tc0a": "CPU",
+        "Tc0b": "CPU",
+        "Tc0c": "CPU",
+        "Tc0d": "CPU Die",
+        "Tc0e": "CPU",
+        "Tc0f": "CPU",
+        "Tc0p": "CPU Package",
         "TG0P": "GPU Proximity",
         "TG0D": "GPU Die",
-        "TH0P": "Heatsink",
-        "TM0P": "Memory Proximity",
-        "TN0D": "Northbridge Die",
-        "TB0T": "Battery",
-        "Ta0P": "Ambient",
-        "TW0P": "Airport",
-        "Tp0P": "Platform Controller",
-        "Tc0p": "CPU Package",
+        "TG0H": "GPU Heatsink",
+        "TG0c": "GPU Core",
+        "Tg05": "GPU",
+        "Tg0D": "GPU Die",
+        "Tg0L": "GPU",
         "Tg0P": "GPU Package",
-        "Th0P": "Heat Pipe"
+        "Tg0T": "GPU",
+        "Tg0d": "GPU Die",
+        "Tg0p": "GPU Proximity",
+        "TH0P": "Heatsink",
+        "TH0B": "Battery",
+        "TH0F": "Heatsink",
+        "Th0H": "Heat Pipe",
+        "Th0L": "Heat Pipe",
+        "Th0P": "Heat Pipe",
+        "Th0R": "Heat Pipe",
+        "Th0a": "Heatsink",
+        "Th0b": "Heatsink",
+        "Th0c": "Heatsink",
+        "TM0P": "Memory Proximity",
+        "TM0S": "Memory",
+        "Tm0P": "Memory",
+        "Tm0p": "Memory",
+        "TN0D": "Northbridge Die",
+        "TN0P": "Platform",
+        "Tp0P": "System",
+        "Tp0C": "CPU",
+        "Tp1C": "CPU",
+        "Tp09": "System",
+        "Tp0T": "System",
+        "Tp0t": "System",
+        "TB0T": "Battery",
+        "TB1T": "Battery",
+        "TB2T": "Battery",
+        "TBXT": "Battery",
+        "Ta0P": "Ambient",
+        "Ta0p": "Ambient",
+        "TW0P": "Wi-Fi",
+        "TW0T": "Wi-Fi",
+        "Ts0P": "Storage",
+        "Ts0S": "Storage",
+        "AC0T": "Power",
+        "AC1T": "Power"
     ]
 }
 

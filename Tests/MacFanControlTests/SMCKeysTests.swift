@@ -34,6 +34,24 @@ final class SMCKeysTests: XCTestCase {
     func testComponentName() {
         XCTAssertEqual(SMCKeyCodec.componentName(for: "TC0P"), "CPU")
         XCTAssertEqual(SMCKeyCodec.componentName(for: "TG0P"), "GPU")
+        XCTAssertEqual(SMCKeyCodec.componentName(for: "Tp0C"), "CPU")
+        XCTAssertEqual(SMCKeyCodec.componentName(for: "Tg0d"), "GPU")
+        XCTAssertEqual(SMCKeyCodec.componentName(for: "TH0B"), "Battery")
+        XCTAssertEqual(SMCKeyCodec.componentName(for: "TB1T"), "Battery")
+        XCTAssertEqual(SMCKeyCodec.componentName(for: "TW0P"), "Wi-Fi")
+    }
+
+    func testFriendlySensorNames() {
+        XCTAssertEqual(SMCKeyCodec.friendlySensorName(for: "Tp0C"), "CPU")
+        XCTAssertEqual(SMCKeyCodec.friendlySensorName(for: "Tg0d"), "GPU Die")
+        XCTAssertEqual(SMCKeyCodec.friendlySensorName(for: "TW0P"), "Wi-Fi")
+        XCTAssertEqual(SMCKeyCodec.friendlySensorName(for: "TH0B"), "Battery")
+        XCTAssertEqual(SMCKeyCodec.friendlySensorName(for: "TB1T"), "Battery")
+    }
+
+    func testComponentSortOrder() {
+        XCTAssertLessThan(SMCKeyCodec.componentSortOrder("CPU"), SMCKeyCodec.componentSortOrder("GPU"))
+        XCTAssertLessThan(SMCKeyCodec.componentSortOrder("GPU"), SMCKeyCodec.componentSortOrder("Battery"))
     }
 }
 
@@ -69,5 +87,6 @@ final class DiagnosticReportTests: XCTestCase {
         XCTAssertTrue(text.contains("Apple M2"))
         XCTAssertTrue(text.contains("F0Md"))
         XCTAssertTrue(text.contains("test note"))
+        XCTAssertTrue(text.contains("Authorized helper session"))
     }
 }
