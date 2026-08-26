@@ -36,7 +36,7 @@ Credit: [macos-smc-fan research](https://github.com/agoodkind/macos-smc-fan), [m
 
 ## Temperature keys
 
-Temperature sensors are discovered from a curated list of known keys (e.g. `TC0P`, `TG0P`, `TB0T`) plus probing `T000`–`T0FF` keys. Values are decoded based on reported data type (`sp78`, `fpe2`, `flt`).
+Temperature sensors are discovered from a curated list of known keys (e.g. `TC0P`, `Tp0C`, `Tg0d`, `TB0T`). The app shows readable names such as CPU, GPU Die, Battery, and Wi-Fi. Values are decoded based on reported data type (`sp78`, `fpe2`, `flt`).
 
 ## Value codecs
 

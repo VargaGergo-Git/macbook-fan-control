@@ -9,9 +9,10 @@ MacFanControl is a lightweight menu bar app that lets you monitor fan speeds and
 
 ## Features
 
-- Menu bar app with live fan RPM and temperature readouts
+- Menu bar app with live fan RPM and readable temperature names
 - Manual fan speed sliders for each fan
 - One-click **Auto** (release to system control) and **Max** buttons
+- Administrator password asked once per Mac session, not on every slider move
 - Runtime hardware probing — no hardcoded Mac model list
 - Apple Silicon M3+ unlock support via adaptive `Ftst` sequence
 - Diagnostic export for GitHub issue reports
@@ -20,7 +21,7 @@ MacFanControl is a lightweight menu bar app that lets you monitor fan speeds and
 
 - macOS 13 (Ventura) or later
 - MacBook with AppleSMC (Intel 2015+ or any Apple Silicon MacBook)
-- Administrator password when changing fan speeds
+- Administrator password **once** the first time you change fans (kept for the rest of that Mac session)
 
 ## Install
 
@@ -43,10 +44,9 @@ chmod +x scripts/run.sh
 
 ```bash
 swift build -c release
-.build/release/MacFanControl
 ```
 
-This builds both `MacFanControl` and `MacFanControlHelper` in `.build/release/`. The helper must sit next to the main binary for fan speed changes to work.
+Then launch the binary next to `MacFanControlHelper`. With SwiftPM this is usually `.build/release/MacFanControl`. With Xcode’s toolchain it may be `.build/out/Products/Release/MacFanControl`. `./scripts/run.sh` locates either path.
 
 To package a `.dmg` locally:
 
@@ -58,13 +58,11 @@ To package a `.dmg` locally:
 
 1. Launch MacFanControl — a fan icon appears in the menu bar.
 2. Click the icon to open the control panel.
-3. Move a fan slider to set manual RPM — macOS prompts for your administrator password once per change.
+3. Click **Allow fan control…** or move a fan slider. macOS asks for your administrator password **once**; later changes reuse that helper until you restart the Mac.
 4. Click **Auto** to return fans to system control.
 5. Click **Copy diagnostic info** to share hardware details when reporting issues.
 
-**Tip:** To avoid repeated password prompts, run with `sudo .build/release/MacFanControl` after building.
-
-**Safety:** When you quit the app or click **Auto**, all fans are released back to automatic control.
+**Safety:** When you quit the app or click **Auto**, all fans are released back to automatic control. The authorized helper can stay available so the next launch does not ask for a password again.
 
 ## Compatibility
 
@@ -84,7 +82,7 @@ Official releases are ad-hoc signed. If macOS blocks the app:
 1. Right-click the app → **Open**, or
 2. Build from source yourself with `swift build`
 
-Fan writes require administrator privileges — the same requirement as other open-source SMC fan tools.
+Fan writes require administrator privileges. The app asks once, then talks to a short-lived root helper over a local socket. That helper only accepts commands from your user account.
 
 ## Prior art
 
