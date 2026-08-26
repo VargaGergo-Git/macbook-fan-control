@@ -1,6 +1,9 @@
 import Foundation
+import Darwin
 
 enum PrivilegedSMC {
+    private static let lock = NSLock()
+
     static var canWriteDirectly: Bool {
         geteuid() == 0
     }
@@ -9,20 +12,66 @@ enum PrivilegedSMC {
         HelperLocator.path != nil
     }
 
+    static var sessionAlive: Bool {
+        canWriteDirectly || PrivilegedWriteDaemon.ping(socketPath: socketPath)
+    }
+
     static var helperSearchSummary: String {
         HelperLocator.searchSummary
     }
 
-    static func writeUInt8(_ key: String, value: UInt8, using smc: SMCService) throws {
+    private static var socketPath: String {
+        PrivilegedWriteDaemon.socketPath(for: getuid())
+    }
+
+    static func ensureSession() throws {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if canWriteDirectly { return }
+        if PrivilegedWriteDaemon.ping(socketPath: socketPath) { return }
+
+        guard let helperPath = HelperLocator.path else {
+            throw PrivilegedError.helperMissing
+        }
+
+        let uid = getuid()
+        let sock = socketPath
+        let logPath = "/tmp/macfancontrol-\(uid).log"
+        let command = "nohup \(shellEscape(helperPath)) daemon \(shellEscape(sock)) \(uid) >/dev/null 2>\(shellEscape(logPath)) & echo STARTED"
+        try runAsAdmin(command: command)
+
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if PrivilegedWriteDaemon.ping(socketPath: sock) {
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.08)
+        }
+
+        let logTail = ((try? String(contentsOfFile: logPath, encoding: .utf8)) ?? "")
+            .split(separator: "\n")
+            .suffix(8)
+            .joined(separator: "\n")
+        throw PrivilegedError.helperFailed(
+            logTail.isEmpty
+                ? "Could not start the authorized fan helper. Try Allow fan control again."
+                : "Could not start the authorized fan helper:\n\(logTail)"
+        )
+    }
+
+    static func writeUInt8(_ key: String, value: UInt8, using smc: SMCService? = nil) throws {
         if canWriteDirectly {
+            guard let smc else { throw SMCError.notPrivileged }
             try smc.writeUInt8(key, value: value)
             return
         }
         try runHelper(arguments: ["write-u8", key, String(value)])
     }
 
-    static func writeFloatRPM(_ key: String, value: Double, using smc: SMCService) throws {
+    static func writeFloatRPM(_ key: String, value: Double, using smc: SMCService? = nil) throws {
         if canWriteDirectly {
+            guard let smc else { throw SMCError.notPrivileged }
             try smc.writeFloatRPM(key, value: value)
             return
         }
@@ -34,9 +83,10 @@ enum PrivilegedSMC {
         targetKey: String,
         rpm: Double,
         useFtst: Bool,
-        using smc: SMCService
+        using smc: SMCService? = nil
     ) throws {
         if canWriteDirectly {
+            guard let smc else { throw SMCError.notPrivileged }
             try FanWriteOperations.setManualRPM(
                 smc: smc,
                 modeKey: modeKey,
@@ -55,8 +105,14 @@ enum PrivilegedSMC {
         ])
     }
 
-    static func setAutomatic(modeKeys: [String], clearFtst: Bool, using smc: SMCService) throws {
+    static func setAutomatic(
+        modeKeys: [String],
+        clearFtst: Bool,
+        using smc: SMCService? = nil,
+        promptIfNeeded: Bool = true
+    ) throws {
         if canWriteDirectly {
+            guard let smc else { throw SMCError.notPrivileged }
             try FanWriteOperations.setAutomatic(
                 smc: smc,
                 modeKeys: modeKeys,
@@ -64,15 +120,19 @@ enum PrivilegedSMC {
             )
             return
         }
-        try runHelper(arguments: [
-            "set-fans-auto",
-            modeKeys.joined(separator: ","),
-            clearFtst ? "1" : "0"
-        ])
+        try runHelper(
+            arguments: [
+                "set-fans-auto",
+                modeKeys.joined(separator: ","),
+                clearFtst ? "1" : "0"
+            ],
+            promptIfNeeded: promptIfNeeded
+        )
     }
 
-    static func unlockManualControl(modeKey: String, useFtst: Bool, using smc: SMCService) throws {
+    static func unlockManualControl(modeKey: String, useFtst: Bool, using smc: SMCService? = nil) throws {
         if canWriteDirectly {
+            guard let smc else { throw SMCError.notPrivileged }
             try FanWriteOperations.unlockManualControl(
                 smc: smc,
                 modeKey: modeKey,
@@ -87,16 +147,55 @@ enum PrivilegedSMC {
         ])
     }
 
-    private static func runHelper(arguments: [String]) throws {
-        guard let helperPath = HelperLocator.path else {
-            throw PrivilegedError.helperMissing
+    private static func runHelper(arguments: [String], promptIfNeeded: Bool = true) throws {
+        if !PrivilegedWriteDaemon.ping(socketPath: socketPath) {
+            guard promptIfNeeded else {
+                throw PrivilegedError.helperFailed("Fan helper is not authorized.")
+            }
+            try ensureSession()
         }
 
-        let command = ([helperPath] + arguments)
-            .map(shellEscape)
-            .joined(separator: " ")
+        switch sendCommand(arguments) {
+        case .ok:
+            return
+        case .disconnected:
+            guard promptIfNeeded else {
+                throw PrivilegedError.helperFailed("Lost connection to the fan helper.")
+            }
+            try ensureSession()
+            switch sendCommand(arguments) {
+            case .ok:
+                return
+            case .disconnected:
+                throw PrivilegedError.helperFailed("Lost connection to the fan helper.")
+            case .failed(let message):
+                throw PrivilegedError.helperFailed(message)
+            }
+        case .failed(let message):
+            throw PrivilegedError.helperFailed(message)
+        }
+    }
 
-        try runAsAdmin(command: command)
+    private static func sendCommand(_ arguments: [String]) -> HelperReply {
+        let command = "CMD " + arguments.joined(separator: " ")
+        guard let reply = PrivilegedWriteDaemon.sendCommand(socketPath: socketPath, command: command) else {
+            return .disconnected
+        }
+
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("OK") {
+            return .ok
+        }
+        if trimmed.hasPrefix("ERR ") {
+            return .failed(String(trimmed.dropFirst(4)))
+        }
+        return .failed(trimmed)
+    }
+
+    private enum HelperReply {
+        case ok
+        case disconnected
+        case failed(String)
     }
 
     private static func shellEscape(_ value: String) -> String {
