@@ -7,7 +7,8 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "MacFanControl", targets: ["MacFanControl"])
+        .executable(name: "MacFanControl", targets: ["MacFanControl"]),
+        .executable(name: "MacFanControlHelper", targets: ["MacFanControlHelper"])
     ],
     targets: [
         .target(
@@ -18,6 +19,11 @@ let package = Package(
             name: "MacFanControl",
             dependencies: ["MacFanControlCore"],
             path: "Sources/MacFanControl"
+        ),
+        .executableTarget(
+            name: "MacFanControlHelper",
+            dependencies: ["MacFanControlCore"],
+            path: "Sources/MacFanControlHelper"
         ),
         .testTarget(
             name: "MacFanControlTests",
