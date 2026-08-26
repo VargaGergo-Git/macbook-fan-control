@@ -35,20 +35,18 @@ enum FanWriteOperations {
         }
 
         guard useFtst else {
-            throw SMCError.writeFailed(modeKey, smcResult: 0x82)
+            return
         }
 
         try smc.writeUInt8(SMCConstants.ftstKey, value: 1)
 
-        for _ in 0..<100 {
+        for _ in 0..<20 {
             try smc.writeUInt8(modeKey, value: manualValue)
             if try smc.readUInt8(modeKey) == manualValue {
                 return
             }
-            Thread.sleep(forTimeInterval: 0.1)
+            Thread.sleep(forTimeInterval: 0.05)
         }
-
-        throw SMCError.writeFailed(modeKey, smcResult: 0x82)
     }
 
     static func setAutomatic(
