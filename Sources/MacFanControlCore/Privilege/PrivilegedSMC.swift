@@ -222,7 +222,12 @@ enum HelperLocator {
         }
 
         return matches.sorted { lhs, rhs in
-            lhs.contains("/release/") && !rhs.contains("/release/")
+            let lhsRelease = lhs.localizedCaseInsensitiveContains("/release/")
+            let rhsRelease = rhs.localizedCaseInsensitiveContains("/release/")
+            if lhsRelease != rhsRelease {
+                return lhsRelease
+            }
+            return lhs < rhs
         }
     }
 }
