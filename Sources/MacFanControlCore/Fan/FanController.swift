@@ -207,7 +207,7 @@ public final class FanController: ObservableObject {
         }
 
         guard profile.hasFtstKey else {
-            throw SMCError.writeFailed(modeKey, status: 0x82)
+            throw SMCError.writeFailed(modeKey, smcResult: 0x82)
         }
 
         try smc.writeUInt8(SMCConstants.ftstKey, value: 1)
@@ -220,6 +220,6 @@ public final class FanController: ObservableObject {
             Thread.sleep(forTimeInterval: 0.1)
         }
 
-        throw SMCError.writeFailed(modeKey, status: 0x82)
+        throw SMCError.writeFailed(modeKey, smcResult: 0x82)
     }
 }
