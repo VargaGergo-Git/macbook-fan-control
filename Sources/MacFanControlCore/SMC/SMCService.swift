@@ -182,7 +182,7 @@ final class SMCService {
 
     #if os(macOS)
     private func call(_ input: inout SMCParamStruct, _ output: inout SMCParamStruct, isWrite: Bool = false) throws {
-        let size = MemoryLayout<SMCParamStruct>.stride
+        var size = MemoryLayout<SMCParamStruct>.stride
         let result = IOConnectCallStructMethod(
             connection,
             UInt32(kSMCHandleYPCEvent),
