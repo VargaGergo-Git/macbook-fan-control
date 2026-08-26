@@ -158,25 +158,29 @@ enum HelperLocator {
         var paths: [String] = []
         let helperName = "MacFanControlHelper"
 
-        func append(_ path: String) {
+        func appendUnique(_ path: String) {
             if !paths.contains(path) {
                 paths.append(path)
             }
         }
 
         if let override = ProcessInfo.processInfo.environment["MACFANCONTROL_HELPER"] {
-            append(override)
+            appendUnique(override)
         }
 
         let executable = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
-        append(executable.deletingLastPathComponent().appendingPathComponent(helperName).path)
+        appendUnique(executable.deletingLastPathComponent().appendingPathComponent(helperName).path)
 
         if let bundleExecutable = Bundle.main.executableURL?.standardizedFileURL {
-            append(bundleExecutable.deletingLastPathComponent().appendingPathComponent(helperName).path)
+            appendUnique(bundleExecutable.deletingLastPathComponent().appendingPathComponent(helperName).path)
         }
 
-        append(contentsOf: buildDirectoryCandidates(near: executable.deletingLastPathComponent().path))
-        append(contentsOf: buildDirectoryCandidates(near: FileManager.default.currentDirectoryPath))
+        for path in buildDirectoryCandidates(near: executable.deletingLastPathComponent().path) {
+            appendUnique(path)
+        }
+        for path in buildDirectoryCandidates(near: FileManager.default.currentDirectoryPath) {
+            appendUnique(path)
+        }
 
         return paths
     }
