@@ -27,7 +27,7 @@ enum PrivilegedError: Error, LocalizedError {
         case .authorizationDenied:
             return "Administrator authorization was denied."
         case .helperMissing:
-            return "MacFanControlHelper not found next to the app. Rebuild with swift build -c release."
+            return "MacFanControlHelper not found. Rebuild with: swift build -c release\nThen run: ./scripts/run.sh"
         case .helperFailed(let message):
             return message
         }

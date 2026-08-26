@@ -10,6 +10,16 @@ enum FanWriteOperations {
     ) throws {
         try unlockManualControl(smc: smc, modeKey: modeKey, useFtst: useFtst)
         try smc.writeFloatRPM(targetKey, value: rpm)
+
+        let readBack = try smc.readFloatRPM(targetKey)
+        if abs(readBack - rpm) <= max(100, rpm * 0.05) {
+            return
+        }
+
+        // Some MacBooks accept target RPM only after a target-first write sequence.
+        try smc.writeFloatRPM(targetKey, value: rpm)
+        try unlockManualControl(smc: smc, modeKey: modeKey, useFtst: useFtst)
+        try smc.writeFloatRPM(targetKey, value: rpm)
     }
 
     static func unlockManualControl(

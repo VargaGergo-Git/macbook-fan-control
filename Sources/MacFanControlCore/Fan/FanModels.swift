@@ -87,8 +87,18 @@ public struct DiagnosticReport: Sendable {
             "Ftst key available: \(profile.hasFtstKey)",
             "Read-only mode: \(readOnly)",
             "Temperature sensors: \(sensorCount)",
+            "Helper available: \(PrivilegedSMC.helperAvailable)",
+            "Running as root: \(PrivilegedSMC.canWriteDirectly)",
             ""
         ]
+
+        if !PrivilegedSMC.helperAvailable {
+            lines.append("Helper search paths:")
+            for path in HelperLocator.candidatePaths {
+                lines.append("  - \(path)")
+            }
+            lines.append("")
+        }
 
         for fan in fans {
             lines.append("Fan \(fan.id):")
