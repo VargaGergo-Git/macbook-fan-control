@@ -79,11 +79,18 @@ public final class FanController: ObservableObject {
                 guard let fan = fans.first(where: { $0.id == fanID }) else { return }
 
                 let clamped = min(max(rpm, fan.minRPM), fan.maxRPM)
+                statusMessage = "Requesting administrator access..."
                 try await setManualSpeed(for: fanID, rpm: clamped, profile: profile)
+                try verifyManualWrite(for: fanID, rpm: clamped, profile: profile)
                 isManualMode = true
                 statusMessage = "Fan \(fanID) target set to \(Int(clamped)) RPM."
+            } catch PrivilegedError.authorizationDenied {
+                isManualMode = false
+                statusMessage = "Administrator authorization was canceled."
             } catch {
+                isManualMode = false
                 statusMessage = error.localizedDescription
+                notes.append("Fan \(fanID) write failed: \(error.localizedDescription)")
             }
         }
     }
@@ -120,8 +127,10 @@ public final class FanController: ObservableObject {
             } else if PrivilegedSMC.helperAvailable {
                 statusMessage = "Connected. \(detectedProfile.fanCount) fan(s). Move a slider to authorize fan control."
             } else {
-                statusMessage = "Connected (read-only). Rebuild to include MacFanControlHelper."
-                notes.append("MacFanControlHelper not found next to the app binary.")
+                isReadOnly = true
+                statusMessage = "Helper not found. Run: swift build -c release && ./scripts/run.sh"
+                notes.append("MacFanControlHelper not found.")
+                notes.append(PrivilegedSMC.helperSearchSummary)
             }
         } catch {
             isReadOnly = true
@@ -201,5 +210,20 @@ public final class FanController: ObservableObject {
             useFtst: profile.hasFtstKey,
             using: smc
         )
+    }
+
+    private func verifyManualWrite(for fanIndex: Int, rpm: Double, profile: HardwareProfile) throws {
+        let modeKey = profile.fanModeKeys[fanIndex]
+        let targetKey = SMCKeyCodec.fanKey(prefix: "F", index: fanIndex) + "Tg"
+        let mode = try smc.readUInt8(modeKey)
+        let target = try smc.readFloatRPM(targetKey)
+
+        guard mode == UInt8(FanMode.manual.rawValue) else {
+            throw SMCError.writeFailed(modeKey, smcResult: mode)
+        }
+
+        guard abs(target - rpm) <= max(150, rpm * 0.08) else {
+            throw SMCError.writeFailed(targetKey, smcResult: 0)
+        }
     }
 }
