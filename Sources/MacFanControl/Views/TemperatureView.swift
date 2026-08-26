@@ -53,10 +53,12 @@ private struct TemperatureRow: View {
     }
 
     private var accessibilityText: String {
+        let current = String(format: "%.1f degrees", sensor.celsius)
         if let peak {
-            return "\(sensor.component), \(String(format: \"%.1f degrees\", sensor.celsius)), session peak \(String(format: \"%.0f degrees\", peak))"
+            let peakText = String(format: "%.0f degrees", peak)
+            return "\(sensor.component), \(current), session peak \(peakText)"
         }
-        return "\(sensor.component), \(String(format: \"%.1f degrees\", sensor.celsius))"
+        return "\(sensor.component), \(current)"
     }
 
     private var heatColor: Color {
