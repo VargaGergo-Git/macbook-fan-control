@@ -10,10 +10,15 @@ public final class FanController: ObservableObject {
     @Published public private(set) var isAuthorized = false
     @Published public private(set) var statusMessage = "Connecting to SMC..."
     @Published public private(set) var hardwareProfile: HardwareProfile?
+    @Published public private(set) var controlMode: ControlMode = .appleAuto
+    @Published public private(set) var thermalPressure: ThermalPressure = .unknown
+    @Published public private(set) var history: [HistorySample] = []
+    @Published public private(set) var cpuPeakCelsius: Double?
 
     public init() {}
 
     private let smc = SMCService()
+    private let pressureMonitor = ThermalPressureMonitor()
     private var pollTask: Task<Void, Never>?
     private var profile: HardwareProfile?
     private var notes: [String] = []
@@ -21,8 +26,13 @@ public final class FanController: ObservableObject {
     private var isWriting = false
     private var lastWatchdog = Date.distantPast
 
+    public var summarySensors: [TemperatureSensor] {
+        TemperatureSummary.hottestByComponent(sensors)
+    }
+
     public func start() {
         guard pollTask == nil else { return }
+        pressureMonitor.start()
         pollTask = Task { [weak self] in
             await self?.bootstrap()
             await self?.pollLoop()
@@ -32,6 +42,7 @@ public final class FanController: ObservableObject {
     public func stop() {
         pollTask?.cancel()
         pollTask = nil
+        pressureMonitor.stop()
         smc.close()
         PrivilegedRunner.invalidate()
     }
@@ -59,6 +70,7 @@ public final class FanController: ObservableObject {
         guard let profile else { return }
 
         pendingTargets = [:]
+        controlMode = .appleAuto
         isManualMode = false
 
         do {
@@ -83,13 +95,40 @@ public final class FanController: ObservableObject {
             do {
                 try await setAutomaticForAllFans()
                 pendingTargets = [:]
+                controlMode = .appleAuto
                 isManualMode = false
                 isAuthorized = PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly
-                statusMessage = "Automatic fan control restored."
+                statusMessage = "Apple automatic fan control restored."
             } catch PrivilegedError.authorizationDenied {
                 statusMessage = "Administrator authorization was canceled."
             } catch {
                 statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    public func setPerformanceMode() {
+        Task {
+            guard PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly else {
+                statusMessage = "Click Allow fan control first. Performance will not ask for a password after that."
+                return
+            }
+            isWriting = true
+            defer { isWriting = false }
+            controlMode = .performanceCurve
+            isManualMode = true
+            await applyPerformanceCurve()
+            lastWatchdog = .distantPast
+            await maintainManualControl()
+            isAuthorized = true
+            let temp = FanCurve.hottestDieCelsius(in: sensors)
+            if let temp {
+                statusMessage = String(
+                    format: "Performance curve: %.0f °C die. Fans ramp from 65 °C to max at 85 °C — cools earlier, does not raise TDP.",
+                    temp
+                )
+            } else {
+                statusMessage = "Performance curve: fans ramp from 65 °C to max at 85 °C. This cools earlier; it does not raise TDP."
             }
         }
     }
@@ -104,6 +143,7 @@ public final class FanController: ObservableObject {
             defer { isWriting = false }
             do {
                 try await setManualSpeed(forAll: fans.map(\.maxRPM))
+                controlMode = .fixedRPM
                 isManualMode = true
                 isAuthorized = true
                 statusMessage = "All fans set to maximum."
@@ -133,6 +173,7 @@ public final class FanController: ObservableObject {
                 try await setManualSpeed(for: fanID, rpm: clamped, profile: profile)
                 pendingTargets[fanID] = clamped
                 overlayPendingTargets()
+                controlMode = .fixedRPM
                 isManualMode = true
                 isAuthorized = true
                 isWriting = false
@@ -144,6 +185,7 @@ public final class FanController: ObservableObject {
                 }
             } catch PrivilegedError.authorizationDenied {
                 isWriting = false
+                controlMode = .appleAuto
                 isManualMode = false
                 statusMessage = "Administrator authorization was canceled."
             } catch {
@@ -155,6 +197,14 @@ public final class FanController: ObservableObject {
     }
 
     public func copyDiagnostics() -> String {
+        var extra = notes
+        extra.append("Control mode: \(controlMode.rawValue)")
+        extra.append("Thermal pressure: \(thermalPressure.label)")
+        if let cpuPeakCelsius {
+            extra.append(String(format: "CPU session peak: %.1f °C", cpuPeakCelsius))
+        }
+        extra.append("History samples: \(history.count)")
+
         let report = DiagnosticExporter.makeReport(
             profile: profile ?? HardwareProfile(
                 fanCount: 0,
@@ -166,7 +216,7 @@ public final class FanController: ObservableObject {
             fans: fans,
             sensors: sensors,
             readOnly: isReadOnly,
-            notes: notes
+            notes: extra
         )
         return report.text
     }
@@ -179,6 +229,9 @@ public final class FanController: ObservableObject {
             hardwareProfile = detectedProfile
             fans = try HardwareProbe.readFans(using: smc, profile: detectedProfile)
             sensors = smc.enumerateTemperatureKeys(limit: 12)
+            updateCPUPeak()
+            thermalPressure = pressureMonitor.current()
+            recordHistory()
             isReadOnly = false
             isAuthorized = PrivilegedSMC.canWriteDirectly || PrivilegedSMC.sessionAlive
 
@@ -190,7 +243,7 @@ public final class FanController: ObservableObject {
                 statusMessage = "Connected. Click Allow fan control once. After that the slider will not ask for a password."
             } else {
                 isReadOnly = true
-                statusMessage = "Helper not found. Run: swift build -c release && ./scripts/run.sh"
+                statusMessage = "Helper not found. Run: bash scripts/run.sh"
                 notes.append("MacFanControlHelper not found.")
                 notes.append(PrivilegedSMC.helperSearchSummary)
             }
@@ -204,7 +257,10 @@ public final class FanController: ObservableObject {
     private func pollLoop() async {
         while !Task.isCancelled {
             await refreshReadings()
-            if isManualMode, !isWriting {
+            if controlMode == .performanceCurve, !isWriting {
+                await applyPerformanceCurve()
+            }
+            if controlMode != .appleAuto, !isWriting {
                 await maintainManualControl()
             }
             try? await Task.sleep(for: .seconds(1))
@@ -218,13 +274,29 @@ public final class FanController: ObservableObject {
             fans = try HardwareProbe.readFans(using: smc, profile: profile)
             overlayPendingTargets()
             sensors = smc.refreshTemperatures(sensors)
+            updateCPUPeak()
+            thermalPressure = pressureMonitor.current()
             isAuthorized = PrivilegedSMC.canWriteDirectly || PrivilegedSMC.sessionAlive
-            if pendingTargets.isEmpty, !isManualMode {
-                isManualMode = fans.contains { $0.mode == .manual }
+            recordHistory()
+            if controlMode == .appleAuto {
+                isManualMode = false
             }
         } catch {
             notes.append("Refresh failed: \(error.localizedDescription)")
         }
+    }
+
+    private func applyPerformanceCurve() async {
+        guard !fans.isEmpty else { return }
+        let temperature = FanCurve.hottestDieCelsius(in: sensors) ?? 0
+        for fan in fans {
+            pendingTargets[fan.id] = FanCurve.targetRPM(
+                temperature: temperature,
+                minRPM: fan.minRPM,
+                maxRPM: fan.maxRPM
+            )
+        }
+        overlayPendingTargets()
     }
 
     private func maintainManualControl() async {
@@ -311,7 +383,32 @@ public final class FanController: ObservableObject {
                 fans[index].mode = .manual
             }
         }
-        isManualMode = true
+        if controlMode != .appleAuto {
+            isManualMode = true
+        }
+    }
+
+    private func recordHistory() {
+        let cpu = sensors.filter { $0.component == "CPU" }.map(\.celsius).max()
+        let gpu = sensors.filter { $0.component == "GPU" }.map(\.celsius).max()
+        let rpm = fans.map(\.actualRPM).max()
+        let sample = HistorySample(
+            time: Date(),
+            cpuCelsius: cpu,
+            gpuCelsius: gpu,
+            fanRPM: rpm,
+            pressure: thermalPressure
+        )
+        history = HistoryBuffer.appending(history, sample)
+    }
+
+    private func updateCPUPeak() {
+        guard let cpu = sensors.filter({ $0.component == "CPU" }).map(\.celsius).max() else { return }
+        if let existing = cpuPeakCelsius {
+            cpuPeakCelsius = max(existing, cpu)
+        } else {
+            cpuPeakCelsius = cpu
+        }
     }
 
     private func didEchoTarget(fanID: Int, rpm: Double) -> Bool {
