@@ -35,6 +35,13 @@ Drag **MacFanControl** to Applications. On first launch, macOS Gatekeeper may wa
 ```bash
 git clone https://github.com/VargaGergo-Git/macbook-fan-control.git
 cd macbook-fan-control
+chmod +x scripts/run.sh
+./scripts/run.sh
+```
+
+`scripts/run.sh` builds both binaries, ensures the helper sits next to the app, and launches it. Manual build:
+
+```bash
 swift build -c release
 .build/release/MacFanControl
 ```
