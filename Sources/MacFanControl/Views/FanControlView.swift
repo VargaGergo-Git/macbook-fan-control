@@ -107,6 +107,15 @@ struct FanControlView: View {
             }
             .buttonStyle(.link)
             .font(.caption)
+
+            Button("Quit") {
+                controller.releaseAllFans()
+                controller.stop()
+                NSApplication.shared.terminate(nil)
+            }
+            .buttonStyle(.link)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 }

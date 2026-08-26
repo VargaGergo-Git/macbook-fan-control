@@ -18,7 +18,7 @@ public final class FanController: ObservableObject {
     private var notes: [String] = []
 
     public func start() {
-        pollTask?.cancel()
+        guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             await self?.bootstrap()
             await self?.pollLoop()
@@ -119,7 +119,7 @@ public final class FanController: ObservableObject {
             profile = detectedProfile
             hardwareProfile = detectedProfile
             fans = try HardwareProbe.readFans(using: smc, profile: detectedProfile)
-            sensors = smc.enumerateTemperatureKeys()
+            sensors = smc.enumerateTemperatureKeys(limit: 12)
             isReadOnly = false
 
             if PrivilegedSMC.canWriteDirectly {
@@ -154,7 +154,7 @@ public final class FanController: ObservableObject {
 
         do {
             fans = try HardwareProbe.readFans(using: smc, profile: profile)
-            sensors = smc.enumerateTemperatureKeys(limit: 12)
+            sensors = smc.refreshTemperatures(sensors)
         } catch {
             notes.append("Refresh failed: \(error.localizedDescription)")
         }

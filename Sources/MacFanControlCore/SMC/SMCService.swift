@@ -272,19 +272,32 @@ final class SMCService {
             )
         }
 
-        for key in allKeyNames() {
-            appendSensor(key: key)
-        }
-
         for key in SMCKeyCodec.knownTemperatureKeys {
             appendSensor(key: key)
         }
 
-        for index in 0..<256 where sensors.count < limit {
-            appendSensor(key: String(format: "T%03X", index))
-        }
-
         return sensors.sorted { $0.celsius > $1.celsius }
+    }
+
+    func refreshTemperatures(_ sensors: [TemperatureSensor]) -> [TemperatureSensor] {
+        sensors.compactMap { sensor in
+            guard let keyData = try? readKey(sensor.id) else { return sensor }
+            guard let celsius = SMCKeyCodec.decodeTemperature(
+                key: sensor.id,
+                bytes: keyData.data,
+                size: keyData.dataSize,
+                dataType: keyData.dataType
+            ) else {
+                return sensor
+            }
+            return TemperatureSensor(
+                id: sensor.id,
+                name: sensor.name,
+                component: sensor.component,
+                celsius: celsius
+            )
+        }
+        .sorted { $0.celsius > $1.celsius }
     }
 
     #if os(macOS)

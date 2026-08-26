@@ -175,59 +175,19 @@ enum HelperLocator {
             appendUnique(bundleExecutable.deletingLastPathComponent().appendingPathComponent(helperName).path)
         }
 
-        for path in buildDirectoryCandidates(near: executable.deletingLastPathComponent().path) {
-            appendUnique(path)
-        }
-        for path in buildDirectoryCandidates(near: FileManager.default.currentDirectoryPath) {
-            appendUnique(path)
-        }
+        let cwd = FileManager.default.currentDirectoryPath
+        appendUnique((cwd as NSString).appendingPathComponent(".build/release/\(helperName)"))
+        appendUnique((cwd as NSString).appendingPathComponent(".build/out/Products/Release/\(helperName)"))
 
-        return paths
-    }
-
-    private static func buildDirectoryCandidates(near basePath: String) -> [String] {
-        var results: [String] = []
-        var directory = URL(fileURLWithPath: basePath).standardizedFileURL
-
-        for _ in 0..<6 {
-            let buildRoot = directory.appendingPathComponent(".build")
-            if FileManager.default.fileExists(atPath: buildRoot.path) {
-                results.append(contentsOf: findHelperExecutables(in: buildRoot.path))
-            }
+        var directory = executable.deletingLastPathComponent()
+        for _ in 0..<8 {
+            appendUnique(directory.appendingPathComponent(".build/release/\(helperName)").path)
+            appendUnique(directory.appendingPathComponent(".build/out/Products/Release/\(helperName)").path)
             let parent = directory.deletingLastPathComponent()
             if parent.path == directory.path { break }
             directory = parent
         }
 
-        return results
-    }
-
-    private static func findHelperExecutables(in buildRoot: String) -> [String] {
-        guard let enumerator = FileManager.default.enumerator(atPath: buildRoot) else {
-            return []
-        }
-
-        var matches: [String] = []
-        for case let relativePath as String in enumerator {
-            guard relativePath.hasSuffix("MacFanControlHelper") else { continue }
-            guard !relativePath.contains(".dSYM/") else { continue }
-
-            let fullPath = (buildRoot as NSString).appendingPathComponent(relativePath)
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory),
-                  !isDirectory.boolValue else {
-                continue
-            }
-            matches.append(fullPath)
-        }
-
-        return matches.sorted { lhs, rhs in
-            let lhsRelease = lhs.localizedCaseInsensitiveContains("/release/")
-            let rhsRelease = rhs.localizedCaseInsensitiveContains("/release/")
-            if lhsRelease != rhsRelease {
-                return lhsRelease
-            }
-            return lhs < rhs
-        }
+        return paths
     }
 }
