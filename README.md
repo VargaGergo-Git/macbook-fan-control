@@ -36,8 +36,7 @@ Drag **MacFanControl** to Applications. On first launch, macOS Gatekeeper may wa
 ```bash
 git clone https://github.com/VargaGergo-Git/macbook-fan-control.git
 cd macbook-fan-control
-chmod +x scripts/run.sh
-./scripts/run.sh
+bash scripts/run.sh
 ```
 
 `scripts/run.sh` builds both binaries, ensures the helper sits next to the app, and launches it. Manual build:
@@ -46,12 +45,12 @@ chmod +x scripts/run.sh
 swift build -c release
 ```
 
-Then launch the binary next to `MacFanControlHelper`. With SwiftPM this is usually `.build/release/MacFanControl`. With Xcode’s toolchain it may be `.build/out/Products/Release/MacFanControl`. `./scripts/run.sh` locates either path.
+Then launch the binary next to `MacFanControlHelper`. With SwiftPM this is usually `.build/release/MacFanControl`. With Xcode’s toolchain it may be `.build/out/Products/Release/MacFanControl`. `bash scripts/run.sh` locates either path.
 
 To package a `.dmg` locally:
 
 ```bash
-./scripts/build-dmg.sh
+bash scripts/build-dmg.sh
 ```
 
 ## Usage
@@ -67,7 +66,7 @@ To package a `.dmg` locally:
 To remove the helper later:
 
 ```bash
-./scripts/uninstall-helper.sh
+bash scripts/uninstall-helper.sh
 ```
 
 ## Compatibility
@@ -88,7 +87,7 @@ Official releases are ad-hoc signed. If macOS blocks the app:
 1. Right-click the app → **Open**, or
 2. Build from source yourself with `swift build`
 
-Fan writes require administrator privileges. Click **Allow fan control…** once. That installs a LaunchDaemon (`com.macfancontrol.helper`) which stays running as root and only accepts commands from your user account over a local socket. Slider moves never show the password dialog. Remove it with `./scripts/uninstall-helper.sh`.
+Fan writes require administrator privileges. Click **Allow fan control…** once. That installs a LaunchDaemon (`com.macfancontrol.helper`) which stays running as root and only accepts commands from your user account over a local socket. Slider moves never show the password dialog. Remove it with `bash scripts/uninstall-helper.sh`.
 
 ## Prior art
 
