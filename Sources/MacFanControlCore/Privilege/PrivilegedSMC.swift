@@ -323,10 +323,12 @@ enum PrivilegedSMC {
 
 enum HelperLocator {
     static var sourcePath: String? {
-        candidatePaths.first { path in
-            path != PrivilegedWriteDaemon.installedHelperPath
-                && FileManager.default.isExecutableFile(atPath: path)
-        } ?? candidatePaths.first { FileManager.default.isExecutableFile(atPath: path) }
+        let executable = candidatePaths.filter { candidate in
+            FileManager.default.isExecutableFile(atPath: candidate)
+        }
+        return executable.first { candidate in
+            candidate != PrivilegedWriteDaemon.installedHelperPath
+        } ?? executable.first
     }
 
     static var searchSummary: String {
