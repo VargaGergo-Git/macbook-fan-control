@@ -89,7 +89,7 @@ public struct DiagnosticReport: Sendable {
             "Temperature sensors: \(sensorCount)",
             "Helper available: \(PrivilegedSMC.helperAvailable)",
             "Running as root: \(PrivilegedSMC.canWriteDirectly)",
-            "Authorized helper session: \(PrivilegedSMC.sessionAlive)",
+            "Fan helper running: \(PrivilegedSMC.sessionAlive)",
             ""
         ]
 

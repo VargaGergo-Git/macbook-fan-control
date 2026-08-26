@@ -60,6 +60,8 @@ fi
 
 chmod +x "$APP" "$HELPER" 2>/dev/null || true
 
+/usr/bin/killall MacFanControl >/dev/null 2>&1 || true
+
 APP_DIR="$(dirname "$APP")"
 HELPER_DIR="$(dirname "$HELPER")"
 

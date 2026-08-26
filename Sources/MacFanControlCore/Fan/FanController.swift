@@ -39,12 +39,12 @@ public final class FanController: ObservableObject {
     public func authorize() {
         Task {
             do {
-                statusMessage = "macOS will ask for your password once."
+                statusMessage = "macOS will ask for your password once to install the fan helper."
                 try await Task.detached {
                     try PrivilegedSMC.ensureSession()
                 }.value
                 isAuthorized = true
-                statusMessage = "Fan control allowed. You will not be asked for a password again this session."
+                statusMessage = "Fan helper installed. Moving the slider will not ask for a password again."
             } catch PrivilegedError.authorizationDenied {
                 isAuthorized = false
                 statusMessage = "Administrator authorization was canceled."
@@ -65,8 +65,7 @@ public final class FanController: ObservableObject {
             try PrivilegedSMC.setAutomatic(
                 modeKeys: profile.fanModeKeys,
                 clearFtst: profile.hasFtstKey,
-                using: smc,
-                promptIfNeeded: false
+                using: smc
             )
         } catch {
             notes.append("Release on exit skipped: \(error.localizedDescription)")
@@ -75,6 +74,10 @@ public final class FanController: ObservableObject {
 
     public func setAutoMode() {
         Task {
+            guard PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly else {
+                statusMessage = "Click Allow fan control first. The app will not ask for a password on Auto or Max."
+                return
+            }
             isWriting = true
             defer { isWriting = false }
             do {
@@ -93,6 +96,10 @@ public final class FanController: ObservableObject {
 
     public func setMaxSpeed() {
         Task {
+            guard PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly else {
+                statusMessage = "Click Allow fan control first. The app will not ask for a password on Auto or Max."
+                return
+            }
             isWriting = true
             defer { isWriting = false }
             do {
@@ -115,11 +122,12 @@ public final class FanController: ObservableObject {
                 guard let fan = fans.first(where: { $0.id == fanID }) else { return }
 
                 let clamped = min(max(rpm, fan.minRPM), fan.maxRPM)
-                if PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly {
-                    statusMessage = "Setting fan \(displayName(for: fanID)) to \(Int(clamped)) RPM..."
-                } else {
-                    statusMessage = "macOS will ask for your password once, then keep fan control allowed."
+                guard PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly else {
+                    statusMessage = "Click Allow fan control first. The slider will not ask for a password."
+                    return
                 }
+
+                statusMessage = "Setting fan \(displayName(for: fanID)) to \(Int(clamped)) RPM..."
 
                 isWriting = true
                 try await setManualSpeed(for: fanID, rpm: clamped, profile: profile)
@@ -177,9 +185,9 @@ public final class FanController: ObservableObject {
             if PrivilegedSMC.canWriteDirectly {
                 statusMessage = "Connected. Fan writes are allowed."
             } else if isAuthorized {
-                statusMessage = "Connected. Fan control is already allowed this session."
+                statusMessage = "Connected. Fan helper is already running — no password needed."
             } else if PrivilegedSMC.helperAvailable {
-                statusMessage = "Connected. Allow fan control once — you will not be asked again this session."
+                statusMessage = "Connected. Click Allow fan control once. After that the slider will not ask for a password."
             } else {
                 isReadOnly = true
                 statusMessage = "Helper not found. Run: swift build -c release && ./scripts/run.sh"
@@ -265,7 +273,11 @@ public final class FanController: ObservableObject {
         overlayPendingTargets()
     }
 
-    private func setManualSpeed(for fanIndex: Int, rpm: Double, profile: HardwareProfile) async throws {
+    private func setManualSpeed(
+        for fanIndex: Int,
+        rpm: Double,
+        profile: HardwareProfile
+    ) async throws {
         let modeKey = profile.fanModeKeys[fanIndex]
         let targetKey = SMCKeyCodec.fanKey(prefix: "F", index: fanIndex) + "Tg"
 
