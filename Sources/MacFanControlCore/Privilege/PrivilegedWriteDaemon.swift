@@ -156,7 +156,7 @@ enum PrivilegedWriteDaemon {
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         addr.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
-        path.withCString { source in
+        _ = path.withCString { source in
             withUnsafeMutablePointer(to: &addr.sun_path) { destination in
                 destination.withMemoryRebound(to: CChar.self, capacity: 104) { chars in
                     strncpy(chars, source, 103)

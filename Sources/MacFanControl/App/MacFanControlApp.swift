@@ -4,16 +4,19 @@ import MacFanControlCore
 
 @main
 enum MacFanControlMain {
-    static let delegate = AppDelegate()
-
+    @MainActor
     static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
+        let delegate = AppDelegate()
         app.delegate = delegate
-        app.run()
+        withExtendedLifetime(delegate) {
+            app.run()
+        }
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = FanController()
     private var statusItem: NSStatusItem?
@@ -52,7 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusItem = statusItem
 
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.closePopover()
+            Task { @MainActor in
+                self?.closePopover()
+            }
         }
     }
 
