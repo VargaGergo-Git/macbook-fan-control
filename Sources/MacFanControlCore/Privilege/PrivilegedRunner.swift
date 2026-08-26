@@ -1,16 +1,6 @@
 import Foundation
 
 enum PrivilegedRunner {
-    static func withAuthorization<T>(
-        prompt: String = "MacFanControl needs administrator access to change fan speeds.",
-        _ work: () throws -> T
-    ) throws -> T {
-        if PrivilegedSMC.canWriteDirectly {
-            return try work()
-        }
-        return try work()
-    }
-
     static func invalidate() {}
 }
 
@@ -25,7 +15,7 @@ enum PrivilegedError: Error, LocalizedError {
         case .authorizationFailed:
             return "Unable to request administrator authorization."
         case .authorizationDenied:
-            return "Administrator authorization was denied."
+            return "Administrator authorization was canceled."
         case .helperMissing:
             return "MacFanControlHelper not found. Rebuild with: swift build -c release\nThen run: ./scripts/run.sh"
         case .helperFailed(let message):
