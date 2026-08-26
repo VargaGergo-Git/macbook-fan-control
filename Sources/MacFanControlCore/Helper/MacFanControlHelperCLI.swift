@@ -115,9 +115,6 @@ public enum MacFanControlHelperCLI {
         }
 
         do {
-            if try !PrivilegedWriteDaemon.detachIfNeeded(socketPath: socketPath, allowedUID: uid) {
-                return .success
-            }
             try PrivilegedWriteDaemon.run(socketPath: socketPath, allowedUID: uid)
             return .success
         } catch {

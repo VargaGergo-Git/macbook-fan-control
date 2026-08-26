@@ -9,7 +9,7 @@ enum PrivilegedSMC {
     }
 
     static var helperAvailable: Bool {
-        HelperLocator.path != nil
+        HelperLocator.sourcePath != nil
     }
 
     static var sessionAlive: Bool {
@@ -24,6 +24,8 @@ enum PrivilegedSMC {
         PrivilegedWriteDaemon.socketPath(for: getuid())
     }
 
+    /// Installs a LaunchDaemon helper. This is the only path that shows the
+    /// macOS administrator dialog. Slider writes must never call this.
     static func ensureSession() throws {
         lock.lock()
         defer { lock.unlock() }
@@ -31,27 +33,41 @@ enum PrivilegedSMC {
         if canWriteDirectly { return }
         if PrivilegedWriteDaemon.ping(socketPath: socketPath) { return }
 
-        guard let helperPath = HelperLocator.path else {
+        guard let helperPath = HelperLocator.sourcePath else {
             throw PrivilegedError.helperMissing
         }
 
         let uid = getuid()
         let sock = socketPath
-        let logPath = "/tmp/macfancontrol-\(uid).log"
-        let command = "nohup \(shellEscape(helperPath)) daemon \(shellEscape(sock)) \(uid) >/dev/null 2>\(shellEscape(logPath)) & echo STARTED"
-        try runAsAdmin(command: command)
+        let logPath = PrivilegedWriteDaemon.logPath(for: uid)
+        let script = installScript(
+            helperPath: helperPath,
+            socketPath: sock,
+            uid: uid,
+            logPath: logPath
+        )
 
-        let deadline = Date().addingTimeInterval(5)
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macfancontrol-install-\(uid).sh")
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: scriptURL.path
+        )
+
+        try runAsAdmin(command: "/bin/bash \(shellEscape(scriptURL.path))")
+
+        let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
             if PrivilegedWriteDaemon.ping(socketPath: sock) {
                 return
             }
-            Thread.sleep(forTimeInterval: 0.08)
+            Thread.sleep(forTimeInterval: 0.1)
         }
 
         let logTail = ((try? String(contentsOfFile: logPath, encoding: .utf8)) ?? "")
             .split(separator: "\n")
-            .suffix(8)
+            .suffix(12)
             .joined(separator: "\n")
         throw PrivilegedError.helperFailed(
             logTail.isEmpty
@@ -96,20 +112,21 @@ enum PrivilegedSMC {
             )
             return
         }
-        try runHelper(arguments: [
-            "set-fan-manual-rpm",
-            modeKey,
-            targetKey,
-            String(rpm),
-            useFtst ? "1" : "0"
-        ])
+        try runHelper(
+            arguments: [
+                "set-fan-manual-rpm",
+                modeKey,
+                targetKey,
+                String(rpm),
+                useFtst ? "1" : "0"
+            ]
+        )
     }
 
     static func setAutomatic(
         modeKeys: [String],
         clearFtst: Bool,
-        using smc: SMCService? = nil,
-        promptIfNeeded: Bool = true
+        using smc: SMCService? = nil
     ) throws {
         if canWriteDirectly {
             guard let smc else { throw SMCError.notPrivileged }
@@ -125,12 +142,15 @@ enum PrivilegedSMC {
                 "set-fans-auto",
                 modeKeys.joined(separator: ","),
                 clearFtst ? "1" : "0"
-            ],
-            promptIfNeeded: promptIfNeeded
+            ]
         )
     }
 
-    static func unlockManualControl(modeKey: String, useFtst: Bool, using smc: SMCService? = nil) throws {
+    static func unlockManualControl(
+        modeKey: String,
+        useFtst: Bool,
+        using smc: SMCService? = nil
+    ) throws {
         if canWriteDirectly {
             guard let smc else { throw SMCError.notPrivileged }
             try FanWriteOperations.unlockManualControl(
@@ -140,37 +160,29 @@ enum PrivilegedSMC {
             )
             return
         }
-        try runHelper(arguments: [
-            "unlock-manual",
-            modeKey,
-            useFtst ? "1" : "0"
-        ])
+        try runHelper(
+            arguments: [
+                "unlock-manual",
+                modeKey,
+                useFtst ? "1" : "0"
+            ]
+        )
     }
 
-    private static func runHelper(arguments: [String], promptIfNeeded: Bool = true) throws {
-        if !PrivilegedWriteDaemon.ping(socketPath: socketPath) {
-            guard promptIfNeeded else {
-                throw PrivilegedError.helperFailed("Fan helper is not authorized.")
-            }
-            try ensureSession()
+    private static func runHelper(arguments: [String]) throws {
+        guard PrivilegedWriteDaemon.ping(socketPath: socketPath) else {
+            throw PrivilegedError.helperFailed(
+                "Fan helper is not running. Click Allow fan control once."
+            )
         }
 
         switch sendCommand(arguments) {
         case .ok:
             return
         case .disconnected:
-            guard promptIfNeeded else {
-                throw PrivilegedError.helperFailed("Lost connection to the fan helper.")
-            }
-            try ensureSession()
-            switch sendCommand(arguments) {
-            case .ok:
-                return
-            case .disconnected:
-                throw PrivilegedError.helperFailed("Lost connection to the fan helper.")
-            case .failed(let message):
-                throw PrivilegedError.helperFailed(message)
-            }
+            throw PrivilegedError.helperFailed(
+                "Lost connection to the fan helper. Click Allow fan control once."
+            )
         case .failed(let message):
             throw PrivilegedError.helperFailed(message)
         }
@@ -196,6 +208,79 @@ enum PrivilegedSMC {
         case ok
         case disconnected
         case failed(String)
+    }
+
+    private static func installScript(
+        helperPath: String,
+        socketPath: String,
+        uid: uid_t,
+        logPath: String
+    ) -> String {
+        let src = shellEscape(helperPath)
+        let dest = shellEscape(PrivilegedWriteDaemon.installedHelperPath)
+        let plistPath = shellEscape(PrivilegedWriteDaemon.launchdPlistPath)
+        let label = shellEscape(PrivilegedWriteDaemon.launchdLabel)
+        let sock = shellEscape(socketPath)
+        let log = shellEscape(logPath)
+        let uidArg = shellEscape(String(uid))
+
+        return """
+        #!/bin/bash
+        set -euo pipefail
+
+        SRC=\(src)
+        DEST=\(dest)
+        PLIST=\(plistPath)
+        SOCK=\(sock)
+        LOG=\(log)
+        LABEL=\(label)
+        UID_ARG=\(uidArg)
+        PB=/usr/libexec/PlistBuddy
+
+        /bin/mkdir -p /usr/local/libexec
+        /bin/cp "$SRC" "$DEST"
+        /usr/sbin/chown root:wheel "$DEST"
+        /bin/chmod 755 "$DEST"
+
+        /usr/bin/killall MacFanControlHelper >/dev/null 2>&1 || true
+        /bin/rm -f "$SOCK"
+
+        /bin/rm -f "$PLIST"
+        "$PB" -c "Add :Label string $LABEL" "$PLIST"
+        "$PB" -c "Add :ProgramArguments array" "$PLIST"
+        "$PB" -c "Add :ProgramArguments:0 string $DEST" "$PLIST"
+        "$PB" -c "Add :ProgramArguments:1 string daemon" "$PLIST"
+        "$PB" -c "Add :ProgramArguments:2 string $SOCK" "$PLIST"
+        "$PB" -c "Add :ProgramArguments:3 string $UID_ARG" "$PLIST"
+        "$PB" -c "Add :RunAtLoad bool true" "$PLIST"
+        "$PB" -c "Add :KeepAlive bool true" "$PLIST"
+        "$PB" -c "Add :StandardOutPath string $LOG" "$PLIST"
+        "$PB" -c "Add :StandardErrorPath string $LOG" "$PLIST"
+
+        /usr/sbin/chown root:wheel "$PLIST"
+        /bin/chmod 644 "$PLIST"
+
+        /bin/launchctl bootout "system/$LABEL" >/dev/null 2>&1 || true
+        /bin/launchctl unload "$PLIST" >/dev/null 2>&1 || true
+        if ! /bin/launchctl bootstrap system "$PLIST" >/dev/null 2>&1; then
+            /bin/launchctl load -w "$PLIST"
+        fi
+        /bin/launchctl enable "system/$LABEL" >/dev/null 2>&1 || true
+        /bin/launchctl kickstart -k "system/$LABEL" >/dev/null 2>&1 || /bin/launchctl start "$LABEL" >/dev/null 2>&1 || true
+
+        i=0
+        while [ "$i" -lt 80 ]; do
+            if [ -S "$SOCK" ]; then
+                exit 0
+            fi
+            /bin/sleep 0.1
+            i=$((i + 1))
+        done
+
+        echo "helper did not create $SOCK" >&2
+        /usr/bin/tail -n 20 "$LOG" >&2 || true
+        exit 1
+        """
     }
 
     private static func shellEscape(_ value: String) -> String {
@@ -237,8 +322,11 @@ enum PrivilegedSMC {
 }
 
 enum HelperLocator {
-    static var path: String? {
-        candidatePaths.first { FileManager.default.isExecutableFile(atPath: $0) }
+    static var sourcePath: String? {
+        candidatePaths.first { path in
+            path != PrivilegedWriteDaemon.installedHelperPath
+                && FileManager.default.isExecutableFile(atPath: path)
+        } ?? candidatePaths.first { FileManager.default.isExecutableFile(atPath: path) }
     }
 
     static var searchSummary: String {
@@ -287,6 +375,7 @@ enum HelperLocator {
             directory = parent
         }
 
+        appendUnique(PrivilegedWriteDaemon.installedHelperPath)
         return paths
     }
 }
