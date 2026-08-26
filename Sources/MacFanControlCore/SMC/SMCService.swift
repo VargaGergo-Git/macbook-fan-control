@@ -5,30 +5,99 @@ struct SMCKeyData {
     let key: String
     let data: Data
     let dataSize: UInt32
+    let dataType: UInt32
 }
 
 enum SMCError: Error, LocalizedError {
-    case connectionFailed
+    case connectionFailed(kern_return_t)
+    case structLayoutInvalid(Int)
     case keyNotFound(String)
-    case readFailed(String)
-    case writeFailed(String, status: UInt8)
+    case readFailed(String, smcResult: UInt8)
+    case writeFailed(String, smcResult: UInt8)
+    case notPrivileged
     case unsupportedPlatform
 
     var errorDescription: String? {
         switch self {
-        case .connectionFailed:
-            return "Unable to connect to AppleSMC."
+        case .connectionFailed(let code):
+            return "Unable to connect to AppleSMC (IOKit error 0x\(String(code, radix: 16)))."
+        case .structLayoutInvalid(let size):
+            return "Internal SMC struct layout invalid (\(size) bytes, expected 80)."
         case .keyNotFound(let key):
             return "SMC key not found: \(key)"
-        case .readFailed(let key):
-            return "Failed to read SMC key: \(key)"
-        case .writeFailed(let key, let status):
-            return "Failed to write SMC key \(key) (status 0x\(String(status, radix: 16)))"
+        case .readFailed(let key, let smcResult):
+            return "Failed to read SMC key \(key) (SMC status 0x\(String(smcResult, radix: 16)))."
+        case .writeFailed(let key, let smcResult):
+            return "Failed to write SMC key \(key) (SMC status 0x\(String(smcResult, radix: 16)))."
+        case .notPrivileged:
+            return "Administrator privileges are required for this SMC operation."
         case .unsupportedPlatform:
             return "SMC is only available on macOS."
         }
     }
 }
+
+#if os(macOS)
+private typealias SMCBytes = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+)
+
+private enum SMCCommand: UInt8 {
+    case readKey = 5
+    case writeKey = 6
+    case getKeyInfo = 9
+}
+
+private enum SMCResult: UInt8 {
+    case success = 0
+    case keyNotFound = 132
+}
+
+private struct SMCParamStruct {
+    var key: UInt32 = 0
+    var vers = SMCVersionStruct()
+    var pLimitData = SMCPLimitData()
+    var keyInfo = SMCKeyInfoData()
+    var padding: UInt16 = 0
+    var result: UInt8 = 0
+    var status: UInt8 = 0
+    var data8: UInt8 = 0
+    var data32: UInt32 = 0
+    var bytes: SMCBytes = (
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0
+    )
+}
+
+private struct SMCVersionStruct {
+    var major: UInt8 = 0
+    var minor: UInt8 = 0
+    var build: UInt8 = 0
+    var reserved: UInt8 = 0
+    var release: UInt16 = 0
+}
+
+private struct SMCPLimitData {
+    var version: UInt16 = 0
+    var length: UInt16 = 0
+    var cpuPLimit: UInt32 = 0
+    var gpuPLimit: UInt32 = 0
+    var memPLimit: UInt32 = 0
+}
+
+private struct SMCKeyInfoData {
+    var dataSize: UInt32 = 0
+    var dataType: UInt32 = 0
+    var dataAttributes: UInt8 = 0
+}
+
+private let kSMCHandleYPCEvent: UInt32 = 2
+#endif
 
 final class SMCService {
     private var connection: io_connect_t = 0
@@ -42,22 +111,20 @@ final class SMCService {
         #if !os(macOS)
         throw SMCError.unsupportedPlatform
         #else
-        let matching = IOServiceMatching("AppleSMC")
-        var iterator: io_iterator_t = 0
-        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
-            throw SMCError.connectionFailed
+        let structSize = MemoryLayout<SMCParamStruct>.stride
+        guard structSize == 80 else {
+            throw SMCError.structLayoutInvalid(structSize)
         }
-        defer { IOObjectRelease(iterator) }
 
-        let device = IOIteratorNext(iterator)
-        guard device != 0 else {
-            throw SMCError.connectionFailed
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
+        guard service != 0 else {
+            throw SMCError.connectionFailed(kIOReturnNotFound)
         }
-        defer { IOObjectRelease(device) }
+        defer { IOObjectRelease(service) }
 
-        let result = IOServiceOpen(device, mach_task_self_, 0, &connection)
+        let result = IOServiceOpen(service, mach_task_self_, 0, &connection)
         guard result == KERN_SUCCESS else {
-            throw SMCError.connectionFailed
+            throw SMCError.connectionFailed(result)
         }
         isConnected = true
         #endif
@@ -77,59 +144,45 @@ final class SMCService {
         #if !os(macOS)
         throw SMCError.unsupportedPlatform
         #else
-        var input = SMCParamStruct()
-        var output = SMCParamStruct()
+        let encodedKey = SMCKeyCodec.encodeKey(key)
 
-        input.key = SMCKeyCodec.encodeKey(key)
-        input.data8 = SMCCommand.kernelIndex.rawValue
-        input.data32 = UInt32(SMCCommand.readKeyInfo.rawValue)
+        var infoInput = SMCParamStruct()
+        infoInput.key = encodedKey
+        infoInput.data8 = SMCCommand.getKeyInfo.rawValue
+        let infoOutput = try call(infoInput, isWrite: false, keyLabel: key)
 
-        try call(&input, &output)
+        var readInput = SMCParamStruct()
+        readInput.key = encodedKey
+        readInput.keyInfo.dataSize = infoOutput.keyInfo.dataSize
+        readInput.data8 = SMCCommand.readKey.rawValue
+        let readOutput = try call(readInput, isWrite: false, keyLabel: key)
 
-        input.key = SMCKeyCodec.encodeKey(key)
-        input.data8 = SMCCommand.kernelIndex.rawValue
-        input.data32 = UInt32(SMCCommand.readBytes.rawValue)
-        input.dataSize = output.dataSize
-        input.dataType = output.dataType
+        let size = Int(infoOutput.keyInfo.dataSize)
+        let data = bytesToData(readOutput.bytes, count: size)
 
-        try call(&input, &output)
-
-        let size = Int(output.dataSize)
-        let data = withUnsafeBytes(of: output.bytes) { raw in
-            Data(raw.prefix(size))
-        }
-
-        return SMCKeyData(key: key, data: data, dataSize: output.dataSize)
+        return SMCKeyData(
+            key: key,
+            data: data,
+            dataSize: infoOutput.keyInfo.dataSize,
+            dataType: infoOutput.keyInfo.dataType
+        )
         #endif
     }
 
-    func writeKey(_ key: String, data: Data, dataType: UInt32 = SMCDataType.flt.rawValue) throws {
+    func writeKey(_ key: String, data: Data, dataSize: UInt32? = nil) throws {
         #if !os(macOS)
         throw SMCError.unsupportedPlatform
         #else
+        let encodedKey = SMCKeyCodec.encodeKey(key)
+        let size = dataSize ?? UInt32(min(data.count, 32))
+
         var input = SMCParamStruct()
-        var output = SMCParamStruct()
+        input.key = encodedKey
+        input.keyInfo.dataSize = size
+        input.bytes = dataToBytes(data, count: Int(size))
+        input.data8 = SMCCommand.writeKey.rawValue
 
-        input.key = SMCKeyCodec.encodeKey(key)
-        input.data8 = SMCCommand.kernelIndex.rawValue
-        input.data32 = UInt32(SMCCommand.writeKeyInfo.rawValue)
-
-        try call(&input, &output, isWrite: true)
-
-        input.key = SMCKeyCodec.encodeKey(key)
-        input.data8 = SMCCommand.kernelIndex.rawValue
-        input.data32 = UInt32(SMCCommand.writeBytes.rawValue)
-        input.dataSize = UInt32(min(data.count, 32))
-        input.dataType = dataType
-
-        data.withUnsafeBytes { raw in
-            withUnsafeMutableBytes(of: &input.bytes) { dest in
-                guard let src = raw.baseAddress, let dst = dest.baseAddress else { return }
-                memcpy(dst, src, min(raw.count, 32))
-            }
-        }
-
-        try call(&input, &output, isWrite: true)
+        _ = try call(input, isWrite: true, keyLabel: key)
         #endif
     }
 
@@ -146,11 +199,11 @@ final class SMCService {
     }
 
     func writeUInt8(_ key: String, value: UInt8) throws {
-        try writeKey(key, data: SMCKeyCodec.encodeUI8(value), dataType: SMCDataType.ui8.rawValue)
+        try writeKey(key, data: SMCKeyCodec.encodeUI8(value), dataSize: 1)
     }
 
     func writeFloatRPM(_ key: String, value: Double) throws {
-        try writeKey(key, data: SMCKeyCodec.encodeFloat(value), dataType: SMCDataType.flt.rawValue)
+        try writeKey(key, data: SMCKeyCodec.encodeFloat(value), dataSize: 4)
     }
 
     func enumerateTemperatureKeys(limit: Int = 64) -> [TemperatureSensor] {
@@ -181,111 +234,65 @@ final class SMCService {
     }
 
     #if os(macOS)
-    private func call(_ input: inout SMCParamStruct, _ output: inout SMCParamStruct, isWrite: Bool = false) throws {
-        var size = MemoryLayout<SMCParamStruct>.stride
-        let result = IOConnectCallStructMethod(
+    private func call(_ input: SMCParamStruct, isWrite: Bool, keyLabel: String) throws -> SMCParamStruct {
+        var input = input
+        var output = SMCParamStruct()
+        var outputSize = MemoryLayout<SMCParamStruct>.stride
+
+        let ioResult = IOConnectCallStructMethod(
             connection,
-            UInt32(kSMCHandleYPCEvent),
+            kSMCHandleYPCEvent,
             &input,
-            size,
+            MemoryLayout<SMCParamStruct>.stride,
             &output,
-            &size
+            &outputSize
         )
 
-        let keyLabel = fourCharacterString(from: input.key)
-
-        guard result == KERN_SUCCESS else {
-            throw isWrite
-                ? SMCError.writeFailed(keyLabel, status: output.result)
-                : SMCError.readFailed(keyLabel)
+        if ioResult == kIOReturnNotPrivileged {
+            throw SMCError.notPrivileged
         }
 
-        if output.result != 0 {
+        guard ioResult == KERN_SUCCESS else {
             throw isWrite
-                ? SMCError.writeFailed(keyLabel, status: output.result)
-                : SMCError.readFailed(keyLabel)
+                ? SMCError.writeFailed(keyLabel, smcResult: output.result)
+                : SMCError.readFailed(keyLabel, smcResult: output.result)
+        }
+
+        if output.result == SMCResult.keyNotFound.rawValue {
+            throw SMCError.keyNotFound(keyLabel)
+        }
+
+        guard output.result == SMCResult.success.rawValue else {
+            throw isWrite
+                ? SMCError.writeFailed(keyLabel, smcResult: output.result)
+                : SMCError.readFailed(keyLabel, smcResult: output.result)
+        }
+
+        return output
+    }
+
+    private func bytesToData(_ bytes: SMCBytes, count: Int) -> Data {
+        withUnsafeBytes(of: bytes) { raw in
+            Data(raw.prefix(max(0, min(count, 32))))
         }
     }
 
-    private func fourCharacterString(from key: UInt32) -> String {
-        let chars: [UInt8] = [
-            UInt8((key >> 24) & 0xFF),
-            UInt8((key >> 16) & 0xFF),
-            UInt8((key >> 8) & 0xFF),
-            UInt8(key & 0xFF)
-        ]
-        return String(bytes: chars, encoding: .ascii) ?? "????"
+    private func dataToBytes(_ data: Data, count: Int) -> SMCBytes {
+        var bytes: SMCBytes = (
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0
+        )
+
+        data.withUnsafeBytes { raw in
+            withUnsafeMutableBytes(of: &bytes) { dest in
+                guard let src = raw.baseAddress, let dst = dest.baseAddress else { return }
+                memcpy(dst, src, min(raw.count, count, 32))
+            }
+        }
+
+        return bytes
     }
     #endif
 }
-
-#if os(macOS)
-private let kSMCHandleYPCEvent: UInt32 = 2
-
-private enum SMCCommand: UInt8 {
-    case kernelIndex = 0x00
-    case readKeyInfo = 0x09
-    case readBytes = 0x10
-    case writeKeyInfo = 0x11
-    case writeBytes = 0x12
-}
-
-private enum SMCDataType: UInt32 {
-    case ui8 = 0x75693820  // "ui8 "
-    case flt = 0x666C7420  // "flt "
-    case fpe2 = 0x66706532 // "fpe2"
-    case sp78 = 0x73703738 // "sp78"
-}
-
-private struct SMCParamStruct {
-    var key: UInt32 = 0
-    var vers = SMCVersionStruct()
-    var pLimitData = SMCPLimitData()
-    var keyInfo = SMCKeyInfoData()
-    var result: UInt8 = 0
-    var status: UInt8 = 0
-    var data8: UInt8 = 0
-    var data32: UInt32 = 0
-    var bytes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0
-    )
-
-    var dataSize: UInt32 {
-        get { keyInfo.dataSize }
-        set { keyInfo.dataSize = newValue }
-    }
-
-    var dataType: UInt32 {
-        get { keyInfo.dataType }
-        set { keyInfo.dataType = newValue }
-    }
-}
-
-private struct SMCVersionStruct {
-    var major: UInt8 = 0
-    var minor: UInt8 = 0
-    var build: UInt8 = 0
-    var reserved: UInt8 = 0
-    var release: UInt16 = 0
-}
-
-private struct SMCPLimitData {
-    var version: UInt16 = 0
-    var length: UInt16 = 0
-    var cpuPLimit: UInt32 = 0
-    var gpuPLimit: UInt32 = 0
-    var memPLimit: UInt32 = 0
-}
-
-private struct SMCKeyInfoData {
-    var dataSize: UInt32 = 0
-    var dataType: UInt32 = 0
-    var dataAttributes: UInt8 = 0
-}
-#endif
