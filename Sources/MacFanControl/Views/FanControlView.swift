@@ -82,7 +82,7 @@ struct FanControlView: View {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.shield.fill")
                     .foregroundStyle(.green)
-                Text("Fan control allowed this session")
+                Text("Fan helper is installed — sliders will not ask for a password")
                     .font(.caption.weight(.medium))
                 Spacer()
             }
@@ -95,7 +95,7 @@ struct FanControlView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Allow fan control once")
                     .font(.subheadline.weight(.semibold))
-                Text("macOS will ask for your administrator password. After that, moving the slider will not ask again until you restart the Mac.")
+                Text("macOS will ask for your administrator password to install a small helper. After that, moving the slider, Auto, and Max will not ask again — including the next time you open the app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Allow fan control…") {
@@ -137,7 +137,12 @@ struct FanControlView: View {
                 .font(.subheadline.weight(.semibold))
 
             ForEach(controller.fans) { fan in
-                FanCard(fan: fan, fanCount: controller.fans.count, isManual: controller.isManualMode) { rpm in
+                FanCard(
+                    fan: fan,
+                    fanCount: controller.fans.count,
+                    isManual: controller.isManualMode,
+                    isEnabled: controller.isAuthorized
+                ) { rpm in
                     controller.setFanSpeed(fanID: fan.id, rpm: rpm)
                 }
             }
@@ -151,14 +156,14 @@ struct FanControlView: View {
                     controller.setAutoMode()
                 }
                 .buttonStyle(.bordered)
-                .disabled(controller.fans.isEmpty)
+                .disabled(controller.fans.isEmpty || !controller.isAuthorized)
 
                 Button("Max") {
                     controller.setMaxSpeed()
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(controller.isManualMode ? .orange : .accentColor)
-                .disabled(controller.fans.isEmpty || controller.isReadOnly)
+                .disabled(controller.fans.isEmpty || !controller.isAuthorized)
 
                 Spacer()
 
@@ -189,15 +194,23 @@ private struct FanCard: View {
     let fan: Fan
     let fanCount: Int
     let isManual: Bool
+    let isEnabled: Bool
     let onSpeedChange: (Double) -> Void
 
     @State private var sliderValue: Double
     @State private var isEditing = false
 
-    init(fan: Fan, fanCount: Int, isManual: Bool, onSpeedChange: @escaping (Double) -> Void) {
+    init(
+        fan: Fan,
+        fanCount: Int,
+        isManual: Bool,
+        isEnabled: Bool,
+        onSpeedChange: @escaping (Double) -> Void
+    ) {
         self.fan = fan
         self.fanCount = fanCount
         self.isManual = isManual
+        self.isEnabled = isEnabled
         self.onSpeedChange = onSpeedChange
         _sliderValue = State(initialValue: fan.targetRPM)
     }
@@ -237,7 +250,7 @@ private struct FanCard: View {
                 }
             )
             .tint(isManual ? Color.orange : Color.accentColor)
-            .disabled(fan.maxRPM <= fan.minRPM)
+            .disabled(!isEnabled || fan.maxRPM <= fan.minRPM)
 
             HStack {
                 Text("\(formatted(fan.minRPM)) min")

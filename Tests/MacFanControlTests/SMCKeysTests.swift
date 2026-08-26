@@ -49,9 +49,11 @@ final class SMCKeysTests: XCTestCase {
         XCTAssertEqual(SMCKeyCodec.friendlySensorName(for: "TB1T"), "Battery")
     }
 
-    func testComponentSortOrder() {
-        XCTAssertLessThan(SMCKeyCodec.componentSortOrder("CPU"), SMCKeyCodec.componentSortOrder("GPU"))
-        XCTAssertLessThan(SMCKeyCodec.componentSortOrder("GPU"), SMCKeyCodec.componentSortOrder("Battery"))
+    func testHelperDaemonPaths() {
+        XCTAssertEqual(PrivilegedWriteDaemon.socketPath(for: 501), "/tmp/macfancontrol-501.sock")
+        XCTAssertEqual(PrivilegedWriteDaemon.logPath(for: 501), "/tmp/macfancontrol-501.log")
+        XCTAssertEqual(PrivilegedWriteDaemon.installedHelperPath, "/usr/local/libexec/MacFanControlHelper")
+        XCTAssertEqual(PrivilegedWriteDaemon.launchdLabel, "com.macfancontrol.helper")
     }
 }
 
@@ -87,6 +89,6 @@ final class DiagnosticReportTests: XCTestCase {
         XCTAssertTrue(text.contains("Apple M2"))
         XCTAssertTrue(text.contains("F0Md"))
         XCTAssertTrue(text.contains("test note"))
-        XCTAssertTrue(text.contains("Authorized helper session"))
+        XCTAssertTrue(text.contains("Fan helper running"))
     }
 }
