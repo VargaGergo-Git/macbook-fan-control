@@ -1,16 +1,16 @@
 import Foundation
 
-#if canImport(AppKit)
-import AppKit
-#endif
-
 enum PrivilegedSMC {
     static var canWriteDirectly: Bool {
         geteuid() == 0
     }
 
     static var helperAvailable: Bool {
-        FileManager.default.fileExists(atPath: HelperLocator.path)
+        HelperLocator.path != nil
+    }
+
+    static var helperSearchSummary: String {
+        HelperLocator.searchSummary
     }
 
     static func writeUInt8(_ key: String, value: UInt8, using smc: SMCService) throws {
@@ -88,11 +88,11 @@ enum PrivilegedSMC {
     }
 
     private static func runHelper(arguments: [String]) throws {
-        guard helperAvailable else {
+        guard let helperPath = HelperLocator.path else {
             throw PrivilegedError.helperMissing
         }
 
-        let command = ([HelperLocator.path] + arguments)
+        let command = ([helperPath] + arguments)
             .map(shellEscape)
             .joined(separator: " ")
 
@@ -104,31 +104,121 @@ enum PrivilegedSMC {
     }
 
     private static func runAsAdmin(command: String) throws {
-        #if canImport(AppKit)
-        let scriptSource = "do shell script \"\(command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges"
-        var errorInfo: NSDictionary?
-        let script = NSAppleScript(source: scriptSource)
-        _ = script?.executeAndReturnError(&errorInfo)
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
 
-        if let errorInfo {
-            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Administrator authorization failed."
-            if message.localizedCaseInsensitiveContains("User canceled") {
+        let script = "do shell script \"\(escaped)\" with administrator privileges"
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+
+        let stderrPipe = Pipe()
+        process.standardOutput = Pipe()
+        process.standardError = stderrPipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let message = String(data: errData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let combined = message ?? "Helper exited with code \(process.terminationStatus)."
+            if combined.localizedCaseInsensitiveContains("User canceled")
+                || combined.contains("(-128)")
+                || combined.localizedCaseInsensitiveContains("cancelled") {
                 throw PrivilegedError.authorizationDenied
             }
-            throw PrivilegedError.helperFailed(message)
+            throw PrivilegedError.helperFailed(combined)
         }
-        #else
-        throw PrivilegedError.helperMissing
-        #endif
     }
 }
 
 enum HelperLocator {
-    static var path: String {
-        let executable = URL(fileURLWithPath: CommandLine.arguments[0])
-        return executable
-            .deletingLastPathComponent()
-            .appendingPathComponent("MacFanControlHelper")
-            .path
+    static var path: String? {
+        candidatePaths.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    static var searchSummary: String {
+        let checked = candidatePaths
+        if checked.isEmpty {
+            return "No helper search paths."
+        }
+        return checked.map { path in
+            let exists = FileManager.default.fileExists(atPath: path)
+            let executable = FileManager.default.isExecutableFile(atPath: path)
+            return "\(path) [exists=\(exists), exec=\(executable)]"
+        }.joined(separator: "\n")
+    }
+
+    static var candidatePaths: [String] {
+        var paths: [String] = []
+        let helperName = "MacFanControlHelper"
+
+        func append(_ path: String) {
+            if !paths.contains(path) {
+                paths.append(path)
+            }
+        }
+
+        if let override = ProcessInfo.processInfo.environment["MACFANCONTROL_HELPER"] {
+            append(override)
+        }
+
+        let executable = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+        append(executable.deletingLastPathComponent().appendingPathComponent(helperName).path)
+
+        if let bundleExecutable = Bundle.main.executableURL?.standardizedFileURL {
+            append(bundleExecutable.deletingLastPathComponent().appendingPathComponent(helperName).path)
+        }
+
+        append(contentsOf: buildDirectoryCandidates(near: executable.deletingLastPathComponent().path))
+        append(contentsOf: buildDirectoryCandidates(near: FileManager.default.currentDirectoryPath))
+
+        return paths
+    }
+
+    private static func buildDirectoryCandidates(near basePath: String) -> [String] {
+        var results: [String] = []
+        var directory = URL(fileURLWithPath: basePath).standardizedFileURL
+
+        for _ in 0..<6 {
+            let buildRoot = directory.appendingPathComponent(".build")
+            if FileManager.default.fileExists(atPath: buildRoot.path) {
+                results.append(contentsOf: findHelperExecutables(in: buildRoot.path))
+            }
+            let parent = directory.deletingLastPathComponent()
+            if parent.path == directory.path { break }
+            directory = parent
+        }
+
+        return results
+    }
+
+    private static func findHelperExecutables(in buildRoot: String) -> [String] {
+        guard let enumerator = FileManager.default.enumerator(atPath: buildRoot) else {
+            return []
+        }
+
+        var matches: [String] = []
+        for case let relativePath as String in enumerator {
+            guard relativePath.hasSuffix("MacFanControlHelper") else { continue }
+            guard !relativePath.contains(".dSYM/") else { continue }
+
+            let fullPath = (buildRoot as NSString).appendingPathComponent(relativePath)
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory),
+                  !isDirectory.boolValue else {
+                continue
+            }
+            matches.append(fullPath)
+        }
+
+        return matches.sorted { lhs, rhs in
+            lhs.contains("/release/") && !rhs.contains("/release/")
+        }
     }
 }
