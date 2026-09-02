@@ -7,15 +7,15 @@
 
 MacFanControl is a lightweight menu bar app that lets you monitor fan speeds and temperatures, set manual fan RPM, or return fans to automatic control. It adapts at runtime to Intel and Apple Silicon MacBooks (M1–M5).
 
-On Apple Silicon you cannot overclock or raise TDP. The useful boost is spinning the fan earlier so firmware can hold clocks. **Performance** does that; it is not an overclock.
+On Apple Silicon you cannot overclock or raise TDP. The useful boost is spinning the fan earlier so firmware can hold clocks. **Quiet**, **Balanced**, and **Performance** do that with chassis-aware ramps for MacBook Air and MacBook Pro.
 
 ## Features
 
-- Menu bar app with live fan RPM and a compact **8-minute chart** of CPU temperature, fan RPM, and thermal pressure
-- Thermal-pressure chip from `thermald` (`com.apple.system.thermalpressurelevel`) — Nominal / Moderate / Heavy — which is more useful than `ProcessInfo.thermalState` on Apple Silicon
-- Presets: **Apple Auto**, **Performance**, and **Max**, plus a slider for a fixed RPM
-- **Performance** ramps fans from the hottest CPU/GPU die: min RPM at 65 °C, max RPM at 85 °C. That cools earlier so firmware can hold clocks. It does **not** overclock or raise TDP — Apple Silicon has no user TDP slider.
-- Temperature list shows the hottest CPU, GPU, battery, and Wi-Fi reading (no duplicate battery keys or SMC codes in the main panel)
+- Polished menu-bar panel with live die temperature, fan RPM, an **8-minute chart**, and thermal-pressure chips
+- Chassis detection for **MacBook Air** and **MacBook Pro** — Quiet / Balanced / Performance use different °C ramps and soft RPM ceilings on thin Air machines
+- Presets: **Auto**, **Quiet**, **Balanced**, **Performance**, and **Max**, plus a slider for a fixed RPM
+- Thermal-pressure chip from `thermald` (`com.apple.system.thermalpressurelevel`) — Nominal / Moderate / Heavy — more useful than `ProcessInfo.thermalState` on Apple Silicon
+- Temperature list shows the hottest available sensors (CPU / GPU when present, otherwise System / Storage / Battery / Wi-Fi — works on Airs without discrete GPU keys)
 - Live **battery** card: charge percent, charging vs on-battery, pack watts, adapter watts vs rated limit, system load, voltage/current, and time to full/empty (IOKit `AppleSmartBattery`, no extra password)
 - Administrator password asked **once** to install a LaunchDaemon helper — sliders and presets never trigger that dialog
 - Runtime hardware probing — no hardcoded Mac model list
@@ -62,13 +62,15 @@ bash scripts/build-dmg.sh
 
 1. Launch MacFanControl — a fan icon appears in the menu bar.
 2. Click the icon to open the control panel.
-3. Click **Allow fan control…**. macOS asks for your administrator password **once** and installs a small helper at `/usr/local/libexec/MacFanControlHelper`. Moving the slider, Auto, Performance, and Max will **not** ask again — including after you quit and reopen the app.
+3. Click **Allow fan control…**. macOS asks for your administrator password **once** and installs a small helper at `/usr/local/libexec/MacFanControlHelper`. Moving the slider, Auto, Quiet, Balanced, Performance, and Max will **not** ask again — including after you quit and reopen the app.
 4. Choose a preset:
    - **Auto** — Apple’s quiet-first curve (fans released to firmware).
-   - **Performance** — start spinning around 65 °C and hit max by 85 °C. Useful under compile or LLM load on M-series MacBooks. It cannot raise package power; it only removes heat sooner.
+   - **Quiet** — soft cabin; ramps late and caps below absolute max on Air.
+   - **Balanced** — daily sweet spot for compile/browser load on Air and base Pro.
+   - **Performance** — cools earlier so firmware can hold clocks. On Air it starts sooner than on Pro because thin chassis climb faster. It cannot raise package power.
    - **Max** — hold the hardware maximum RPM.
 5. Drag the slider to override to a fixed RPM (never below that fan’s `F0Mn` minimum).
-6. The **Battery** section shows charge rate, adapter watts, and time remaining. It is read-only and does not need the helper.
+6. The **Power** section shows charge rate, adapter watts, and time remaining. It is read-only and does not need the helper.
 7. Click **Copy diagnostic info** to share hardware details when reporting issues.
 
 **Safety:** When you quit the app or click **Auto**, all fans are released back to automatic control. The helper stays installed so the next launch does not ask for a password.
@@ -84,8 +86,9 @@ bash scripts/uninstall-helper.sh
 | Generation | Status |
 |------------|--------|
 | Intel MacBook (2015–2020) | Supported — direct SMC mode write |
-| Apple Silicon M1/M2 | Supported — root required for writes |
-| Apple Silicon M3/M4 | Supported — `Ftst` unlock when needed |
+| Apple Silicon MacBook Air (M1–M4) | Supported — Quiet/Balanced tuned for thin chassis |
+| Apple Silicon MacBook Pro M1/M2 | Supported — root required for writes |
+| Apple Silicon MacBook Pro M3/M4 | Supported — `Ftst` unlock when needed |
 | Apple Silicon M5+ | Supported — runtime `F%dmd` key probe |
 
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the community test matrix and [docs/SMC-KEYS.md](docs/SMC-KEYS.md) for SMC key documentation.

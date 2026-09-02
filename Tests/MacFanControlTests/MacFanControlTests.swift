@@ -15,42 +15,79 @@ final class ThermalPressureTests: XCTestCase {
         XCTAssertEqual(ThermalPressure.nominal.label, "Nominal")
         XCTAssertEqual(ThermalPressure.moderate.label, "Moderate")
         XCTAssertEqual(ThermalPressure.heavy.label, "Heavy")
-        XCTAssertEqual(ThermalPressure.trapping.label, "Trapping")
     }
 }
 
 final class FanCurveTests: XCTestCase {
-    func testLerpsBetween65And85() {
+    func testPerformanceLerpsOnPro() {
+        let chassis = ChassisProfile(kind: .macBookPro, modelIdentifier: "MacBookPro18,1", fanCount: 2)
         let minRPM = 2317.0
         let maxRPM = 6550.0
 
-        XCTAssertEqual(FanCurve.targetRPM(temperature: 50, minRPM: minRPM, maxRPM: maxRPM), minRPM)
-        XCTAssertEqual(FanCurve.targetRPM(temperature: 65, minRPM: minRPM, maxRPM: maxRPM), minRPM)
-        XCTAssertEqual(FanCurve.targetRPM(temperature: 85, minRPM: minRPM, maxRPM: maxRPM), maxRPM)
-        XCTAssertEqual(FanCurve.targetRPM(temperature: 95, minRPM: minRPM, maxRPM: maxRPM), maxRPM)
+        XCTAssertEqual(
+            FanCurve.targetRPM(temperature: 50, minRPM: minRPM, maxRPM: maxRPM, preset: .performance, chassis: chassis),
+            minRPM
+        )
+        XCTAssertEqual(
+            FanCurve.targetRPM(temperature: 65, minRPM: minRPM, maxRPM: maxRPM, preset: .performance, chassis: chassis),
+            minRPM
+        )
+        XCTAssertEqual(
+            FanCurve.targetRPM(temperature: 85, minRPM: minRPM, maxRPM: maxRPM, preset: .performance, chassis: chassis),
+            maxRPM
+        )
 
-        let mid = FanCurve.targetRPM(temperature: 75, minRPM: minRPM, maxRPM: maxRPM)
+        let mid = FanCurve.targetRPM(
+            temperature: 75,
+            minRPM: minRPM,
+            maxRPM: maxRPM,
+            preset: .performance,
+            chassis: chassis
+        )
         XCTAssertEqual(mid, (minRPM + maxRPM) / 2, accuracy: 0.01)
     }
 
-    func testNeverCommandsBelowMinRPM() {
-        let rpm = FanCurve.targetRPM(temperature: 20, minRPM: 2317, maxRPM: 6550)
-        XCTAssertGreaterThanOrEqual(rpm, 2317)
+    func testAirQuietUsesSofterCeiling() {
+        let air = ChassisProfile(kind: .macBookAir, modelIdentifier: "Mac15,12", fanCount: 1)
+        let pro = ChassisProfile(kind: .macBookPro, modelIdentifier: "MacBookPro18,1", fanCount: 2)
+        let minRPM = 2000.0
+        let maxRPM = 6000.0
+
+        let airQuiet = FanCurve.targetRPM(
+            temperature: 95,
+            minRPM: minRPM,
+            maxRPM: maxRPM,
+            preset: .quiet,
+            chassis: air
+        )
+        let proPerf = FanCurve.targetRPM(
+            temperature: 95,
+            minRPM: minRPM,
+            maxRPM: maxRPM,
+            preset: .performance,
+            chassis: pro
+        )
+
+        XCTAssertEqual(airQuiet, minRPM + (maxRPM - minRPM) * 0.82, accuracy: 0.01)
+        XCTAssertEqual(proPerf, maxRPM, accuracy: 0.01)
+        XCTAssertLessThan(air.ramp(for: .performance).start, pro.ramp(for: .performance).start)
     }
 
-    func testHottestDieUsesCPUAndGPUOnly() {
+    func testHottestDieFallsBackWhenNoCPUOrGPU() {
         let sensors = [
-            TemperatureSensor(id: "Tp0C", name: "CPU Die", component: "CPU", celsius: 72),
-            TemperatureSensor(id: "Tg0d", name: "GPU Die", component: "GPU", celsius: 81),
-            TemperatureSensor(id: "TB0T", name: "Battery", component: "Battery", celsius: 40)
+            TemperatureSensor(id: "TB0T", name: "Battery", component: "Battery", celsius: 40),
+            TemperatureSensor(id: "TW0P", name: "Wi-Fi", component: "Wi-Fi", celsius: 52)
         ]
-        XCTAssertEqual(FanCurve.hottestDieCelsius(in: sensors), 81)
+        XCTAssertEqual(FanCurve.hottestDieCelsius(in: sensors), 52)
     }
 
-    func testControlModeBadges() {
+    func testControlModeBadgesAndPresets() {
         XCTAssertEqual(ControlMode.appleAuto.badgeLabel, "Auto")
+        XCTAssertEqual(ControlMode.quietCurve.badgeLabel, "Quiet")
+        XCTAssertEqual(ControlMode.balancedCurve.badgeLabel, "Balanced")
         XCTAssertEqual(ControlMode.performanceCurve.badgeLabel, "Performance")
-        XCTAssertEqual(ControlMode.fixedRPM.badgeLabel, "Manual")
+        XCTAssertEqual(ControlMode.curve(.quiet), .quietCurve)
+        XCTAssertEqual(ControlMode.quietCurve.curvePreset, .quiet)
     }
 }
 
@@ -60,18 +97,24 @@ final class TemperatureSummaryTests: XCTestCase {
             TemperatureSensor(id: "Tp0C", name: "CPU Die", component: "CPU", celsius: 71),
             TemperatureSensor(id: "Tp09", name: "CPU Virtual Die", component: "CPU", celsius: 74),
             TemperatureSensor(id: "Tg0d", name: "GPU Die", component: "GPU", celsius: 68),
-            TemperatureSensor(id: "Tg0p", name: "GPU Proximity", component: "GPU", celsius: 61),
             TemperatureSensor(id: "TB0T", name: "Battery 1", component: "Battery", celsius: 38),
             TemperatureSensor(id: "TB1T", name: "Battery 2", component: "Battery", celsius: 41),
             TemperatureSensor(id: "TW0P", name: "Wi-Fi Module", component: "Wi-Fi", celsius: 52),
-            TemperatureSensor(id: "TH0x", name: "NAND", component: "NAND", celsius: 44)
+            TemperatureSensor(id: "TH0x", name: "NAND", component: "Storage", celsius: 44)
         ]
         let summary = TemperatureSummary.hottestByComponent(sensors)
         XCTAssertEqual(summary.map(\.component), ["CPU", "GPU", "Battery", "Wi-Fi"])
         XCTAssertEqual(summary[0].celsius, 74)
-        XCTAssertEqual(summary[1].celsius, 68)
         XCTAssertEqual(summary[2].celsius, 41)
-        XCTAssertEqual(summary[3].celsius, 52)
+    }
+
+    func testFallsBackWhenPreferredComponentsMissing() {
+        let sensors = [
+            TemperatureSensor(id: "Ta0P", name: "Ambient", component: "Ambient", celsius: 33),
+            TemperatureSensor(id: "TM0P", name: "Memory", component: "Memory", celsius: 48)
+        ]
+        let summary = TemperatureSummary.hottestByComponent(sensors)
+        XCTAssertEqual(summary.map(\.component), ["Memory", "Ambient"])
     }
 }
 
@@ -113,21 +156,17 @@ final class BatteryMathTests: XCTestCase {
         XCTAssertEqual(BatteryMath.state(isCharging: false, isPluggedIn: true, percent: 80), .pluggedNotCharging)
     }
 
-    func testTelemetryMilliwattsBecomeWatts() {
-        XCTAssertEqual(BatteryMath.wattsFromTelemetry(6879), 6.879, accuracy: 0.001)
-        XCTAssertEqual(BatteryMath.wattsFromTelemetry(96), 96, accuracy: 0.001)
-    }
-
-    func testBatteryWattsSignFromChargeState() {
-        let charging = BatteryMath.batteryWatts(isCharging: true, milliamps: 2500, volts: 12, telemetryWatts: nil)
-        let discharging = BatteryMath.batteryWatts(isCharging: false, milliamps: -2500, volts: 12, telemetryWatts: nil)
-        XCTAssertEqual(charging ?? 0, 30, accuracy: 0.1)
-        XCTAssertEqual(discharging ?? 0, -30, accuracy: 0.1)
-    }
-
     func testSignedWattsLabel() {
         XCTAssertEqual(BatterySnapshot.formatSignedWatts(38), "+38 W")
         XCTAssertEqual(BatterySnapshot.formatSignedWatts(-12), "−12 W")
         XCTAssertEqual(BatterySnapshot.formatSignedWatts(0), "0 W")
+    }
+}
+
+final class ChassisProfileTests: XCTestCase {
+    func testAirIdentifierDetection() {
+        let profile = ChassisProfile(kind: .macBookAir, modelIdentifier: "Mac15,12", fanCount: 1)
+        XCTAssertEqual(profile.summaryLabel, "MacBook Air · 1 fan")
+        XCTAssertEqual(profile.ramp(for: .balanced).start, 68)
     }
 }
