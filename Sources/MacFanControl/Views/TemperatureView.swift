@@ -4,11 +4,20 @@ import MacFanControlCore
 struct TemperatureView: View {
     let sensors: [TemperatureSensor]
     let cpuPeak: Double?
+    var showSensorNames: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Temperatures")
-                .font(.subheadline.weight(.semibold))
+            HStack {
+                Text(showSensorNames ? "All sensors" : "Temperatures")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if showSensorNames {
+                    Text("\(sensors.count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             SurfaceCard(padding: 10) {
                 if sensors.isEmpty {
@@ -17,11 +26,17 @@ struct TemperatureView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(spacing: 8) {
-                        ForEach(sensors) { sensor in
+                        ForEach(sensors.prefix(showSensorNames ? 12 : 4)) { sensor in
                             TemperatureRow(
                                 sensor: sensor,
-                                peak: sensor.component == "CPU" ? cpuPeak : nil
+                                peak: sensor.component == "CPU" ? cpuPeak : nil,
+                                showName: showSensorNames
                             )
+                        }
+                        if showSensorNames, sensors.count > 12 {
+                            Text("+\(sensors.count - 12) more in diagnostics")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
                     }
                 }
@@ -33,6 +48,7 @@ struct TemperatureView: View {
 private struct TemperatureRow: View {
     let sensor: TemperatureSensor
     let peak: Double?
+    var showName: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -40,8 +56,16 @@ private struct TemperatureRow: View {
                 .fill(AppTheme.heatColor(celsius: sensor.celsius))
                 .frame(width: 8, height: 8)
 
-            Text(sensor.component)
-                .font(.caption.weight(.medium))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(sensor.component)
+                    .font(.caption.weight(.medium))
+                if showName {
+                    Text(sensor.name)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
 
             Spacer()
 
