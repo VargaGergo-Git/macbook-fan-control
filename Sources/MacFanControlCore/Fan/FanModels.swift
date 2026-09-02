@@ -54,19 +54,22 @@ public struct HardwareProfile: Sendable {
     public let hasFtstKey: Bool
     public let chipDescription: String
     public let macOSVersion: String
+    public let chassis: ChassisProfile
 
     public init(
         fanCount: Int,
         fanModeKeys: [String],
         hasFtstKey: Bool,
         chipDescription: String,
-        macOSVersion: String
+        macOSVersion: String,
+        chassis: ChassisProfile
     ) {
         self.fanCount = fanCount
         self.fanModeKeys = fanModeKeys
         self.hasFtstKey = hasFtstKey
         self.chipDescription = chipDescription
         self.macOSVersion = macOSVersion
+        self.chassis = chassis
     }
 }
 
@@ -83,6 +86,8 @@ public struct DiagnosticReport: Sendable {
             "===============================",
             "Chip: \(profile.chipDescription)",
             "macOS: \(profile.macOSVersion)",
+            "Chassis: \(profile.chassis.summaryLabel)",
+            "Model ID: \(profile.chassis.modelIdentifier)",
             "Fan count: \(profile.fanCount)",
             "Ftst key available: \(profile.hasFtstKey)",
             "Read-only mode: \(readOnly)",

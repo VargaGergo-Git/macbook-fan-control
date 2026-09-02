@@ -15,7 +15,8 @@ enum HardwareProbe {
             fanModeKeys: modeKeys,
             hasFtstKey: smc.keyExists(SMCConstants.ftstKey),
             chipDescription: chipDescription(),
-            macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString
+            macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            chassis: ChassisProfile.detect(fanCount: fanCount)
         )
     }
 
