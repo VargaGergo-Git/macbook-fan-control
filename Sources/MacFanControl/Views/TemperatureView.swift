@@ -10,13 +10,20 @@ struct TemperatureView: View {
             Text("Temperatures")
                 .font(.subheadline.weight(.semibold))
 
-            if sensors.isEmpty {
-                Text("No temperature sensors found.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(sensors) { sensor in
-                    TemperatureRow(sensor: sensor, peak: sensor.component == "CPU" ? cpuPeak : nil)
+            SurfaceCard(padding: 10) {
+                if sensors.isEmpty {
+                    Text("No temperature sensors found.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(sensors) { sensor in
+                            TemperatureRow(
+                                sensor: sensor,
+                                peak: sensor.component == "CPU" ? cpuPeak : nil
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -30,8 +37,8 @@ private struct TemperatureRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(heatColor)
-                .frame(width: 7, height: 7)
+                .fill(AppTheme.heatColor(celsius: sensor.celsius))
+                .frame(width: 8, height: 8)
 
             Text(sensor.component)
                 .font(.caption.weight(.medium))
@@ -46,7 +53,7 @@ private struct TemperatureRow: View {
 
             Text(String(format: "%.1f°C", sensor.celsius))
                 .font(.caption.monospacedDigit().weight(.semibold))
-                .foregroundStyle(heatColor)
+                .foregroundStyle(AppTheme.heatColor(celsius: sensor.celsius))
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
@@ -59,16 +66,5 @@ private struct TemperatureRow: View {
             return "\(sensor.component), \(current), session peak \(peakText)"
         }
         return "\(sensor.component), \(current)"
-    }
-
-    private var heatColor: Color {
-        switch sensor.celsius {
-        case ..<60:
-            return .green
-        case ..<80:
-            return .orange
-        default:
-            return .red
-        }
     }
 }

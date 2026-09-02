@@ -6,46 +6,53 @@ struct BatteryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Battery")
+            Text("Power")
                 .font(.subheadline.weight(.semibold))
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(snapshot.percentLabel)
-                        .font(.title2.monospacedDigit().weight(.semibold))
-                    Text(snapshot.state.label)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(stateColor)
-                    Spacer()
-                    Text(snapshot.batteryWattsLabel)
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(wattsColor)
-                }
+            SurfaceCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(snapshot.percentLabel)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(AppTheme.ink)
+                        Text(snapshot.state.label)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(stateColor)
+                        Spacer()
+                        Text(snapshot.batteryWattsLabel)
+                            .font(.subheadline.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(wattsColor)
+                    }
 
-                ProgressView(value: progress)
-                    .tint(stateColor)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.primary.opacity(0.08))
+                            Capsule()
+                                .fill(stateColor.gradient)
+                                .frame(width: geo.size.width * progress)
+                        }
+                    }
+                    .frame(height: 7)
 
-                metricRow("Charge rate", snapshot.batteryWattsLabel)
-                metricRow("Adapter", snapshot.adapterLine)
-                if let system = snapshot.systemWatts {
-                    metricRow("System", String(format: "%.0f W", system))
-                }
-                if let volts = snapshot.voltageVolts, let milliamps = snapshot.amperageMilliamps {
-                    metricRow("Pack", String(format: "%.1f V · %.2f A", volts, milliamps / 1000))
-                }
-                if let time = snapshot.timeLabel {
-                    metricRow("Time", time)
-                }
-                if let cycles = snapshot.cycleCount {
-                    let health = snapshot.healthPercent.map { String(format: " · health %.0f%%", $0) } ?? ""
-                    metricRow("Wear", "\(cycles) cycles\(health)")
+                    metricRow("Charge rate", snapshot.batteryWattsLabel)
+                    metricRow("Adapter", snapshot.adapterLine)
+                    if let system = snapshot.systemWatts {
+                        metricRow("System", String(format: "%.0f W", system))
+                    }
+                    if let volts = snapshot.voltageVolts, let milliamps = snapshot.amperageMilliamps {
+                        metricRow("Pack", String(format: "%.1f V · %.2f A", volts, milliamps / 1000))
+                    }
+                    if let time = snapshot.timeLabel {
+                        metricRow("Time", time)
+                    }
+                    if let cycles = snapshot.cycleCount {
+                        let health = snapshot.healthPercent.map { String(format: " · health %.0f%%", $0) } ?? ""
+                        metricRow("Wear", "\(cycles) cycles\(health)")
+                    }
                 }
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
-            )
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
@@ -57,18 +64,17 @@ struct BatteryView: View {
 
     private var stateColor: Color {
         switch snapshot.state {
-        case .charging: return .green
-        case .full: return .green
-        case .pluggedNotCharging: return .orange
-        case .discharging: return .primary
+        case .charging, .full: return AppTheme.calm
+        case .pluggedNotCharging: return AppTheme.warm
+        case .discharging: return AppTheme.tealDeep
         case .unavailable: return .secondary
         }
     }
 
     private var wattsColor: Color {
         guard let watts = snapshot.batteryWatts else { return .secondary }
-        if watts > 0.4 { return .green }
-        if watts < -0.4 { return .orange }
+        if watts > 0.4 { return AppTheme.calm }
+        if watts < -0.4 { return AppTheme.heat }
         return .secondary
     }
 

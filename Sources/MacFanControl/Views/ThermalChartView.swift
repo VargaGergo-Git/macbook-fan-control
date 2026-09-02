@@ -20,27 +20,19 @@ struct ThermalChartView: View {
                 }
             }
 
-            if samples.count < 2 {
-                Text("Collecting samples…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.primary.opacity(0.05))
-                    )
-            } else {
-                chart
-                    .frame(height: 110)
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.primary.opacity(0.05))
-                    )
-                    .drawingGroup()
-
-                legend
+            SurfaceCard(padding: 10) {
+                if samples.count < 2 {
+                    Text("Collecting samples…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
+                } else {
+                    chart
+                        .frame(height: 110)
+                        .drawingGroup()
+                    legend
+                        .padding(.top, 6)
+                }
             }
         }
     }
@@ -54,12 +46,12 @@ struct ThermalChartView: View {
             Canvas { context, size in
                 drawPressureBands(context: &context, size: size, count: count)
                 if let cpuPath = linePath(values: samples.map(\.cpuCelsius), in: size, range: 40...100) {
-                    context.stroke(cpuPath, with: .color(.orange), lineWidth: 1.8)
+                    context.stroke(cpuPath, with: .color(AppTheme.heat), lineWidth: 1.8)
                 }
                 if let rpmPath = linePath(values: samples.map(\.fanRPM), in: size, range: 0...max(maxRPM, 1)) {
                     context.stroke(
                         rpmPath,
-                        with: .color(Color.cyan.opacity(0.9)),
+                        with: .color(AppTheme.tealDeep.opacity(0.9)),
                         style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])
                     )
                 }
@@ -80,16 +72,16 @@ struct ThermalChartView: View {
                     path.move(to: CGPoint(x: x, y: 0))
                     path.addLine(to: CGPoint(x: x, y: height))
                 }
-                .stroke(Color.primary.opacity(0.25), lineWidth: 1)
+                .stroke(AppTheme.ink.opacity(0.2), lineWidth: 1)
             }
         }
     }
 
     private var legend: some View {
         HStack(spacing: 12) {
-            legendItem(color: .orange, title: "CPU")
-            legendItem(color: .cyan, title: "Fan", dashed: true)
-            legendItem(color: .green.opacity(0.5), title: "Pressure")
+            legendItem(color: AppTheme.heat, title: "CPU")
+            legendItem(color: AppTheme.tealDeep, title: "Fan", dashed: true)
+            legendItem(color: AppTheme.calm.opacity(0.7), title: "Pressure")
             Spacer()
             Text("40–100 °C")
                 .font(.caption2)
@@ -113,7 +105,7 @@ struct ThermalChartView: View {
         let bandWidth = size.width / CGFloat(count - 1)
         for index in 0..<(count - 1) {
             let rect = CGRect(x: CGFloat(index) * bandWidth, y: 0, width: bandWidth + 0.5, height: size.height)
-            context.fill(Path(rect), with: .color(pressureColor(samples[index].pressure)))
+            context.fill(Path(rect), with: .color(AppTheme.pressureColor(samples[index].pressure).opacity(0.14)))
         }
     }
 
@@ -133,16 +125,6 @@ struct ThermalChartView: View {
             path.addLine(to: point)
         }
         return path
-    }
-
-    private func pressureColor(_ pressure: ThermalPressure) -> Color {
-        switch pressure {
-        case .nominal: return Color.green.opacity(0.10)
-        case .moderate: return Color.yellow.opacity(0.16)
-        case .heavy: return Color.orange.opacity(0.20)
-        case .trapping, .sleeping: return Color.red.opacity(0.22)
-        case .unknown: return Color.primary.opacity(0.03)
-        }
     }
 
     private func hoverCaption(_ sample: HistorySample) -> String {
