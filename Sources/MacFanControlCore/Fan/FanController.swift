@@ -129,7 +129,7 @@ public final class FanController: ObservableObject {
             isWriting = true
             defer { isWriting = false }
             do {
-                try await setManualSpeed(forAll: fans.map(\.<maxRPM>))
+                try await setManualSpeed(forAll: fans.map(\.maxRPM))
                 controlMode = .fixedRPM
                 isManualMode = true
                 isAuthorized = true
@@ -409,9 +409,9 @@ public final class FanController: ObservableObject {
     }
 
     private func recordHistory() {
-        let cpu = sensors.filter { $0.component == "CPU" }.map(\.<celsius>).max()
-        let gpu = sensors.filter { $0.component == "GPU" }.map(\.<celsius>).max()
-        let rpm = fans.map(\.<actualRPM>).max()
+        let cpu = sensors.filter { $0.component == "CPU" }.map(\.celsius).max()
+        let gpu = sensors.filter { $0.component == "GPU" }.map(\.celsius).max()
+        let rpm = fans.map(\.actualRPM).max()
         let sample = HistorySample(
             time: Date(),
             cpuCelsius: cpu,
@@ -423,7 +423,7 @@ public final class FanController: ObservableObject {
     }
 
     private func updateCPUPeak() {
-        guard let cpu = sensors.filter({ $0.component == "CPU" }).map(\.<celsius>).max() else { return }
+        guard let cpu = sensors.filter({ $0.component == "CPU" }).map(\.celsius).max() else { return }
         if let existing = cpuPeakCelsius {
             cpuPeakCelsius = max(existing, cpu)
         } else {
