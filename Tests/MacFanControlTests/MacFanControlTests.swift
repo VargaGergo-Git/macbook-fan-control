@@ -91,6 +91,25 @@ final class FanCurveTests: XCTestCase {
     }
 }
 
+
+    func testCurveSamplesAreMonotonicOnRamp() {
+        let chassis = ChassisProfile(kind: .macBookPro, modelIdentifier: "MacBookPro18,1", fanCount: 2)
+        let samples = FanCurve.curveSamples(
+            minRPM: 2000,
+            maxRPM: 6000,
+            preset: .balanced,
+            chassis: chassis,
+            fromTemperature: 50,
+            toTemperature: 95,
+            step: 5
+        )
+        XCTAssertGreaterThan(samples.count, 5)
+        let rpms = samples.map(\.rpm)
+        for (a, b) in zip(rpms, rpms.dropFirst()) {
+            XCTAssertLessThanOrEqual(a, b + 0.01)
+        }
+    }
+
 final class TemperatureSummaryTests: XCTestCase {
     func testKeepsHottestOfEachComponent() {
         let sensors = [
