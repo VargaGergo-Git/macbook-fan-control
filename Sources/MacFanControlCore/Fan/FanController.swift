@@ -108,30 +108,16 @@ public final class FanController: ObservableObject {
         }
     }
 
+    public func setQuietMode() {
+        setCurveMode(.quiet)
+    }
+
+    public func setBalancedMode() {
+        setCurveMode(.balanced)
+    }
+
     public func setPerformanceMode() {
-        Task {
-            guard PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly else {
-                statusMessage = "Click Allow fan control first. Performance will not ask for a password after that."
-                return
-            }
-            isWriting = true
-            defer { isWriting = false }
-            controlMode = .performanceCurve
-            isManualMode = true
-            await applyPerformanceCurve()
-            lastWatchdog = .distantPast
-            await maintainManualControl()
-            isAuthorized = true
-            let temp = FanCurve.hottestDieCelsius(in: sensors)
-            if let temp {
-                statusMessage = String(
-                    format: "Performance curve: %.0f °C die. Fans ramp from 65 °C to max at 85 °C — cools earlier, does not raise TDP.",
-                    temp
-                )
-            } else {
-                statusMessage = "Performance curve: fans ramp from 65 °C to max at 85 °C. This cools earlier; it does not raise TDP."
-            }
-        }
+        setCurveMode(.performance)
     }
 
     public func setMaxSpeed() {
@@ -143,7 +129,7 @@ public final class FanController: ObservableObject {
             isWriting = true
             defer { isWriting = false }
             do {
-                try await setManualSpeed(forAll: fans.map(\.maxRPM))
+                try await setManualSpeed(forAll: fans.map(\.<maxRPM>))
                 controlMode = .fixedRPM
                 isManualMode = true
                 isAuthorized = true
@@ -201,6 +187,10 @@ public final class FanController: ObservableObject {
         var extra = notes
         extra.append("Control mode: \(controlMode.rawValue)")
         extra.append("Thermal pressure: \(thermalPressure.label)")
+        if let chassis = hardwareProfile?.chassis {
+            extra.append("Chassis: \(chassis.summaryLabel)")
+            extra.append("Model ID: \(chassis.modelIdentifier)")
+        }
         if let cpuPeakCelsius {
             extra.append(String(format: "CPU session peak: %.1f °C", cpuPeakCelsius))
         }
@@ -213,7 +203,8 @@ public final class FanController: ObservableObject {
                 fanModeKeys: [],
                 hasFtstKey: false,
                 chipDescription: HardwareProbe.chipDescription(),
-                macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString
+                macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+                chassis: ChassisProfile.detect(fanCount: 0)
             ),
             fans: fans,
             sensors: sensors,
@@ -262,8 +253,8 @@ public final class FanController: ObservableObject {
         while !Task.isCancelled {
             battery = BatteryReader.snapshot()
             await refreshReadings()
-            if controlMode == .performanceCurve, !isWriting {
-                await applyPerformanceCurve()
+            if controlMode.curvePreset != nil, !isWriting {
+                await applyActiveCurve()
             }
             if controlMode != .appleAuto, !isWriting {
                 await maintainManualControl()
@@ -291,14 +282,38 @@ public final class FanController: ObservableObject {
         }
     }
 
-    private func applyPerformanceCurve() async {
+    private func setCurveMode(_ preset: CurvePreset) {
+        Task {
+            guard PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly else {
+                statusMessage = "Click Allow fan control first. \(preset.title) will not ask for a password after that."
+                return
+            }
+            isWriting = true
+            defer { isWriting = false }
+            controlMode = ControlMode.curve(preset)
+            isManualMode = true
+            await applyActiveCurve()
+            lastWatchdog = .distantPast
+            await maintainManualControl()
+            isAuthorized = true
+            let chassis = hardwareProfile?.chassis ?? ChassisProfile.detect(fanCount: fans.count)
+            let temp = FanCurve.hottestDieCelsius(in: sensors)
+            statusMessage = FanCurve.statusMessage(preset: preset, chassis: chassis, temperature: temp)
+        }
+    }
+
+    private func applyActiveCurve() async {
         guard !fans.isEmpty else { return }
+        guard let preset = controlMode.curvePreset else { return }
+        let chassis = hardwareProfile?.chassis ?? ChassisProfile.detect(fanCount: fans.count)
         let temperature = FanCurve.hottestDieCelsius(in: sensors) ?? 0
         for fan in fans {
             pendingTargets[fan.id] = FanCurve.targetRPM(
                 temperature: temperature,
                 minRPM: fan.minRPM,
-                maxRPM: fan.maxRPM
+                maxRPM: fan.maxRPM,
+                preset: preset,
+                chassis: chassis
             )
         }
         overlayPendingTargets()
@@ -394,9 +409,9 @@ public final class FanController: ObservableObject {
     }
 
     private func recordHistory() {
-        let cpu = sensors.filter { $0.component == "CPU" }.map(\.celsius).max()
-        let gpu = sensors.filter { $0.component == "GPU" }.map(\.celsius).max()
-        let rpm = fans.map(\.actualRPM).max()
+        let cpu = sensors.filter { $0.component == "CPU" }.map(\.<celsius>).max()
+        let gpu = sensors.filter { $0.component == "GPU" }.map(\.<celsius>).max()
+        let rpm = fans.map(\.<actualRPM>).max()
         let sample = HistorySample(
             time: Date(),
             cpuCelsius: cpu,
@@ -408,7 +423,7 @@ public final class FanController: ObservableObject {
     }
 
     private func updateCPUPeak() {
-        guard let cpu = sensors.filter({ $0.component == "CPU" }).map(\.celsius).max() else { return }
+        guard let cpu = sensors.filter({ $0.component == "CPU" }).map(\.<celsius>).max() else { return }
         if let existing = cpuPeakCelsius {
             cpuPeakCelsius = max(existing, cpu)
         } else {
