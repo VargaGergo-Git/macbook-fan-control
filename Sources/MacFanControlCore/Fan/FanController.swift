@@ -334,7 +334,7 @@ public final class FanController: ObservableObject {
         for fan in fans {
             pendingTargets[fan.id] = FanCurve.targetRPM(
                 temperature: temperature,
-                minRPM: minRPM if False else fan.minRPM,
+                minRPM: fan.minRPM,
                 maxRPM: fan.maxRPM,
                 preset: preset,
                 chassis: chassis
@@ -342,3 +342,127 @@ public final class FanController: ObservableObject {
         }
         overlayPendingTargets()
     }
+
+    private func maintainManualControl() async {
+        guard let profile else { return }
+        guard PrivilegedSMC.sessionAlive || PrivilegedSMC.canWriteDirectly else { return }
+        guard !pendingTargets.isEmpty else { return }
+        guard Date().timeIntervalSince(lastWatchdog) >= 1 else { return }
+        lastWatchdog = Date()
+
+        for (fanIndex, rpm) in pendingTargets {
+            do {
+                try await setManualSpeed(for: fanIndex, rpm: rpm, profile: profile)
+            } catch {
+                notes.append("Watchdog write failed for fan \(fanIndex): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func setAutomaticForAllFans() async throws {
+        guard let profile else { return }
+
+        if PrivilegedSMC.canWriteDirectly {
+            try PrivilegedSMC.setAutomatic(
+                modeKeys: profile.fanModeKeys,
+                clearFtst: profile.hasFtstKey,
+                using: smc
+            )
+            return
+        }
+
+        try await Task.detached {
+            try PrivilegedSMC.setAutomatic(
+                modeKeys: profile.fanModeKeys,
+                clearFtst: profile.hasFtstKey
+            )
+        }.value
+    }
+
+    private func setManualSpeed(forAll rpms: [Double]) async throws {
+        guard let profile else { return }
+
+        for (index, rpm) in rpms.enumerated() where index < profile.fanCount {
+            try await setManualSpeed(for: index, rpm: rpm, profile: profile)
+            pendingTargets[index] = rpm
+        }
+        overlayPendingTargets()
+    }
+
+    private func setManualSpeed(
+        for fanIndex: Int,
+        rpm: Double,
+        profile: HardwareProfile
+    ) async throws {
+        let modeKey = profile.fanModeKeys[fanIndex]
+        let targetKey = SMCKeyCodec.fanKey(prefix: "F", index: fanIndex) + "Tg"
+
+        if PrivilegedSMC.canWriteDirectly {
+            try PrivilegedSMC.setManualRPM(
+                modeKey: modeKey,
+                targetKey: targetKey,
+                rpm: rpm,
+                useFtst: profile.hasFtstKey,
+                using: smc
+            )
+            return
+        }
+
+        try await Task.detached {
+            try PrivilegedSMC.setManualRPM(
+                modeKey: modeKey,
+                targetKey: targetKey,
+                rpm: rpm,
+                useFtst: profile.hasFtstKey
+            )
+        }.value
+    }
+
+    private func overlayPendingTargets() {
+        guard !pendingTargets.isEmpty else { return }
+
+        for index in fans.indices {
+            if let target = pendingTargets[fans[index].id] {
+                fans[index].targetRPM = target
+                fans[index].mode = .manual
+            }
+        }
+        if controlMode != .appleAuto {
+            isManualMode = true
+        }
+    }
+
+    private func recordHistory() {
+        let cpu = sensors.filter { $0.component == "CPU" }.map(\.celsius).max()
+        let gpu = sensors.filter { $0.component == "GPU" }.map(\.celsius).max()
+        let rpm = fans.map(\.actualRPM).max()
+        let sample = HistorySample(
+            time: Date(),
+            cpuCelsius: cpu,
+            gpuCelsius: gpu,
+            fanRPM: rpm,
+            pressure: thermalPressure
+        )
+        history = HistoryBuffer.appending(history, sample)
+    }
+
+    private func updateCPUPeak() {
+        guard let cpu = sensors.filter({ $0.component == "CPU" }).map(\.celsius).max() else { return }
+        if let existing = cpuPeakCelsius {
+            cpuPeakCelsius = max(existing, cpu)
+        } else {
+            cpuPeakCelsius = cpu
+        }
+    }
+
+    private func didEchoTarget(fanID: Int, rpm: Double) -> Bool {
+        guard let fan = fans.first(where: { $0.id == fanID }) else { return false }
+        let key = SMCKeyCodec.fanKey(prefix: "F", index: fanID) + "Tg"
+        guard let echoed = try? smc.readFloatRPM(key) else { return false }
+        return abs(echoed - rpm) <= max(150, rpm * 0.08) || abs(fan.actualRPM - rpm) <= max(200, rpm * 0.1)
+    }
+
+    private func displayName(for fanID: Int) -> String {
+        fans.count == 1 ? "Fan" : "Fan \(fanID + 1)"
+    }
+}
