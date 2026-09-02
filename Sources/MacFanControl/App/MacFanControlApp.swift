@@ -87,4 +87,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshStatusItem()
     }
 
-    private def refreshStatusItem() {
+    private func refreshStatusItem() {
+        guard let button = statusItem?.button else { return }
+        if let die = FanCurve.hottestDieCelsius(in: controller.sensors) {
+            button.title = String(format: " %.0f°", die)
+            button.toolTip = String(
+                format: "MacFanControl — die %.0f °C · %@",
+                die,
+                controller.controlMode.badgeLabel
+            )
+        } else {
+            button.title = ""
+            button.toolTip = "MacFanControl"
+        }
+    }
+
+    @objc private func togglePopover(_ sender: Any?) {
+        guard let button = statusItem?.button, let popover else { return }
+
+        if popover.isShown {
+            closePopover()
+            return
+        }
+
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func closePopover() {
+        popover?.performClose(nil)
+    }
+}
