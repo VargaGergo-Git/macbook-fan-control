@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 import MacFanControlCore
 
 @main
@@ -8,6 +9,8 @@ enum MacFanControlMain {
     static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
+        // Follow System Settings appearance (Light / Dark / Auto).
+        app.appearance = nil
         let delegate = AppDelegate()
         app.delegate = delegate
         withExtendedLifetime(delegate) {
@@ -22,10 +25,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var eventMonitor: Any?
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller.start()
         installStatusItem()
+        bindStatusItemTitle()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -37,9 +42,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = false
-        popover.contentSize = NSSize(width: 380, height: 780)
+        popover.appearance = nil // inherit Light/Dark from System Settings
+        popover.contentSize = NSSize(width: 400, height: 820)
         popover.contentViewController = NSHostingController(
             rootView: FanControlView(controller: controller)
+                .preferredColorScheme(nil)
         )
         self.popover = popover
 
@@ -61,20 +68,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func togglePopover(_ sender: Any?) {
-        guard let button = statusItem?.button, let popover else { return }
+    private func bindStatusItemTitle() {
+        controller.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshStatusItem()
+            }
+            .store(in: &cancellables)
 
-        if popover.isShown {
-            closePopover()
-            return
-        }
+        // Also refresh on a timer so the title stays live while the popover is closed.
+        Timer.publish(every: 2, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.refreshStatusItem()
+            }
+            .store(in: &cancellables)
 
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
-        NSApp.activate(ignoringOtherApps: true)
+        refreshStatusItem()
     }
 
-    private func closePopover() {
-        popover?.performClose(nil)
-    }
-}
+    private def refreshStatusItem() {
