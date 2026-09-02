@@ -11,7 +11,9 @@ On Apple Silicon you cannot overclock or raise TDP. The useful boost is spinning
 
 ## Features
 
-- Polished menu-bar panel with live die temperature, fan RPM, an **8-minute chart**, and thermal-pressure chips
+- Polished menu-bar panel that follows **System Settings appearance** (Light / Dark / Auto) with a first-class dark theme
+- Live die temperature in the menu-bar title, fan RPM, an **8-minute chart**, and thermal-pressure chips
+- **Advanced** mode: curve preview, full sensor list, GPU on the chart, per-fan delta/fill, and SMC helper telemetry
 - Chassis detection for **MacBook Air** and **MacBook Pro** — Quiet / Balanced / Performance use different °C ramps and soft RPM ceilings on thin Air machines
 - Presets: **Auto**, **Quiet**, **Balanced**, **Performance**, and **Max**, plus a slider for a fixed RPM
 - Thermal-pressure chip from `thermald` (`com.apple.system.thermalpressurelevel`) — Nominal / Moderate / Heavy — more useful than `ProcessInfo.thermalState` on Apple Silicon
