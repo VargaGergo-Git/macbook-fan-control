@@ -4,6 +4,7 @@ import MacFanControlCore
 struct ThermalChartView: View {
     let samples: [HistorySample]
     let maxRPM: Double
+    var showGPU: Bool = false
 
     @State private var hoverIndex: Int?
 
@@ -48,6 +49,9 @@ struct ThermalChartView: View {
                 if let cpuPath = linePath(values: samples.map(\.cpuCelsius), in: size, range: 40...100) {
                     context.stroke(cpuPath, with: .color(AppTheme.heat), lineWidth: 1.8)
                 }
+                if showGPU, let gpuPath = linePath(values: samples.map(\.gpuCelsius), in: size, range: 40...100) {
+                    context.stroke(gpuPath, with: .color(AppTheme.warm), lineWidth: 1.4)
+                }
                 if let rpmPath = linePath(values: samples.map(\.fanRPM), in: size, range: 0...max(maxRPM, 1)) {
                     context.stroke(
                         rpmPath,
@@ -80,6 +84,9 @@ struct ThermalChartView: View {
     private var legend: some View {
         HStack(spacing: 12) {
             legendItem(color: AppTheme.heat, title: "CPU")
+            if showGPU {
+                legendItem(color: AppTheme.warm, title: "GPU")
+            }
             legendItem(color: AppTheme.tealDeep, title: "Fan", dashed: true)
             legendItem(color: AppTheme.calm.opacity(0.7), title: "Pressure")
             Spacer()
@@ -131,6 +138,9 @@ struct ThermalChartView: View {
         var parts: [String] = [sample.pressure.label]
         if let cpu = sample.cpuCelsius {
             parts.append(String(format: "CPU %.0f°", cpu))
+        }
+        if showGPU, let gpu = sample.gpuCelsius {
+            parts.append(String(format: "GPU %.0f°", gpu))
         }
         if let rpm = sample.fanRPM {
             parts.append("\(Int(rpm.rounded())) RPM")

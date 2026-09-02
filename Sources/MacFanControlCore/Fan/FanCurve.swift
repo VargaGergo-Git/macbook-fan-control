@@ -124,6 +124,39 @@ public enum FanCurve {
             ramp.end
         )
     }
+
+    /// Sample the active chassis curve for preview charts (temp °C → RPM).
+    public static func curveSamples(
+        minRPM: Double,
+        maxRPM: Double,
+        preset: CurvePreset,
+        chassis: ChassisProfile,
+        fromTemperature: Double = 40,
+        toTemperature: Double = 100,
+        step: Double = 2
+    ) -> [(temperature: Double, rpm: Double)] {
+        let lo = min(fromTemperature, toTemperature)
+        let hi = max(fromTemperature, toTemperature)
+        let strideStep = max(step, 0.5)
+        var points: [(temperature: Double, rpm: Double)] = []
+        var temperature = lo
+        while temperature <= hi + 0.001 {
+            points.append(
+                (
+                    temperature,
+                    targetRPM(
+                        temperature: temperature,
+                        minRPM: minRPM,
+                        maxRPM: maxRPM,
+                        preset: preset,
+                        chassis: chassis
+                    )
+                )
+            )
+            temperature += strideStep
+        }
+        return points
+    }
 }
 
 public enum TemperatureSummary {
